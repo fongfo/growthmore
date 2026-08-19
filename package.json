@@ -11,6 +11,9 @@
   "scripts": {
     "dev": "npm run build -w @growthmore/shared && concurrently \"npm run dev -w @growthmore/api\" \"npm run dev -w @growthmore/mobile\"",
     "build": "npm run build -w @growthmore/shared && npm run build -w @growthmore/api && npm run build -w @growthmore/mobile",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "security:audit": "npm audit --omit=dev",
+    "security:ci": "npm audit --omit=dev --audit-level=critical",
     "test": "npm run build -w @growthmore/shared && npm run test -ws",
     "typecheck": "npm run build -w @growthmore/shared && npm run typecheck -w @growthmore/api && npm run typecheck -w @growthmore/mobile && npm run typecheck -w @growthmore/shared",
     "lint": "npm run lint -ws"

@@ -25,11 +25,17 @@ export default function App() {
             </AppText>
             <Badge label="Mobile App MVP" tone="learning" />
           </View>
-          <AppText variant="title">成长金计划</AppText>
+          <AppText variant="title">{demoTenant.appName}</AppText>
           <AppText color="textSecondary" variant="body">
             先跑通任务奖励、模拟学习、奖励罐和提现审核闭环，后续开发全部从 Jira BGM
             任务和 development 分支推进。
           </AppText>
+          <View style={styles.themeSwatchRow} accessibilityLabel="当前银行主题色">
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.primary }]} />
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.cta }]} />
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.growth }]} />
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.reward }]} />
+          </View>
           <View style={styles.heroActions}>
             <Button label="开始今日任务" />
             <Button label="查看规则" variant="secondary" />
@@ -94,6 +100,17 @@ const styles = StyleSheet.create({
   metrics: {
     flexDirection: "row",
     gap: spacing.md
+  },
+  themeSwatchRow: {
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  themeSwatch: {
+    borderColor: colors.light.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 28,
+    width: 28
   },
   loopPanel: {
     gap: spacing.lg
