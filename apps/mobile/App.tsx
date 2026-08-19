@@ -9,11 +9,17 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroPanel}>
           <Text style={styles.eyebrow}>{demoTenant.displayName}</Text>
-          <Text style={styles.title}>成长金计划 Demo MVP</Text>
+          <Text style={styles.title}>{demoTenant.appName} Demo MVP</Text>
           <Text style={styles.copy}>
             先跑通任务奖励、模拟学习、奖励罐和提现审核闭环，后续开发全部从 Jira BGM
             任务和 development 分支推进。
           </Text>
+          <View style={styles.themeSwatchRow} accessibilityLabel="当前银行主题色">
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.primary }]} />
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.cta }]} />
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.growth }]} />
+            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.reward }]} />
+          </View>
         </View>
 
         <View style={styles.loopPanel}>
@@ -70,6 +76,18 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontSize: 16,
     lineHeight: 26
+  },
+  themeSwatchRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 20
+  },
+  themeSwatch: {
+    borderColor: "#E2E8F0",
+    borderRadius: 999,
+    borderWidth: 1,
+    height: 28,
+    width: 28
   },
   loopPanel: {
     gap: 12,

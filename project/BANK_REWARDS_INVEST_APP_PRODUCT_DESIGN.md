@@ -584,6 +584,13 @@ CTA：
 - 虚拟/真实资金区分样式。
 - 披露信息优先级。
 
+移动端租户配置实现 source of truth：
+
+- 默认银行租户配置：`packages/shared/src/index.ts` 中的 `demoTenant`。
+- 默认主题配置：`packages/shared/src/index.ts` 中的 `defaultTenantTheme`。
+- 当前租户 API：`GET /api/tenant/current`。
+- 租户配置必须把品牌主题、功能开关和披露文案分开维护；银行品牌可白标化，但虚拟成长金、真实奖励、模拟投资的合规披露不能被主题覆盖。
+
 ### 13.3 字体
 
 推荐：
@@ -716,6 +723,7 @@ CTA：
 用户端：
 
 - `GET /api/app/home`
+- `GET /api/tenant/current`
 - `GET /api/tasks?status=&type=`
 - `POST /api/tasks/:id/start`
 - `POST /api/tasks/:id/submit`
