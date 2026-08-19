@@ -20,6 +20,12 @@ export function createApp() {
     });
   });
 
+  app.get("/api/tenant/current", (_request, response) => {
+    response.json({
+      tenant: demoTenant
+    });
+  });
+
   return app;
 }
 
