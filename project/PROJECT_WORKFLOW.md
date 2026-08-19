@@ -6,6 +6,13 @@ GitHub repository: `https://github.com/fongfo/growthmore`
 Jira project: `BGM` / `Bank-Growth More`  
 Jira URL: `https://growth-more.atlassian.net/jira/software/projects/BGM`
 
+## Product Target
+
+- The user-facing product is a mobile app first.
+- Use `apps/mobile` with Expo, React Native, and TypeScript for user app work.
+- Do not create a Web/H5 user client unless a `BGM` Jira issue explicitly changes the scope.
+- Web work is only in scope for an admin console or a separately approved channel.
+
 ## Branch Policy
 
 - Do not commit directly to `main`.

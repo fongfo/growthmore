@@ -3,8 +3,17 @@
 Status: Draft v1.1  
 Date: 2026-08-18  
 Reference prototype: `sprout-prototype.jsx`  
-Project type: 独立银行白标 B2B2C App / 小程序 / H5 产品方案  
+Project type: 独立银行白标 B2B2C Mobile App 产品方案  
 Source of truth for: 产品定位、用户体验、核心闭环、页面信息架构、奖励规则、投资学习与合规边界
+
+## 0. 当前交付目标
+
+第一版用户端明确做 mobile app，不做 Web/H5 用户端。
+
+- 用户端技术栈：React Native / Expo + TypeScript。
+- 用户端代码目录：`apps/mobile`。
+- Web/H5 和小程序后置，除非后续 `BGM` Jira 任务明确改变范围。
+- 管理后台如果需要，可作为单独后台 Web Admin 范围处理，不应影响用户端 mobile app 方向。
 
 ## 1. 产品一句话
 
@@ -745,10 +754,11 @@ CTA：
 
 技术默认采用本仓库约定：
 
-- 前端：React + TypeScript。
+- 用户端：React Native / Expo + TypeScript。
+- 用户端目录：`apps/mobile`。
 - 后端：Node.js + Express。
 - 数据：开发期可先用 SQLite / PostgreSQL 二选一；若准备进入银行试点，直接使用 PostgreSQL。
-- 形态：优先做移动端 H5 响应式界面，同时保留未来迁移到 App / 小程序的组件结构。
+- 形态：优先做 mobile app。Web H5 和小程序先不做，后续如银行渠道需要再复用核心业务与设计系统扩展。
 
 Demo MVP 包含：
 
@@ -898,7 +908,7 @@ Demo MVP 不接入：
 
 如果独立立项，建议技术架构：
 
-- 用户端：React + TypeScript，优先移动端 H5；后续可迁移 React Native / Expo 或小程序。
+- 用户端：React Native / Expo + TypeScript，优先 mobile app。
 - 管理后台：React + TypeScript + Vite / Next.js。
 - 后端：Node.js + Express，核心业务服务按模块拆分。
 - 数据库：PostgreSQL。
@@ -908,7 +918,7 @@ Demo MVP 不接入：
 
 如果先快速验证：
 
-- 可以先做 H5 或小程序原型。
+- 可以先做 Expo mobile app 原型。
 - 后台先做最小配置能力。
 - 模拟产品参数写入配置表。
 - 提现可以先生成人工审核单，不直接自动打款。
@@ -943,7 +953,7 @@ Demo MVP 不接入：
 - 单用户月度奖励预算上限是多少？
 - 是否需要支持未成年人或家庭账户？
 - 是否需要多银行租户，还是先为一家银行定制？
-- 第一版交付形态是移动 H5、React Native App、小程序，还是三者之一的可迁移架构？
+- 第一版交付形态已确认优先 mobile app；Web H5 和小程序后置。
 - Demo MVP 是否可以全部使用 mock KYC、mock 银行账户和人工提现审核？
 - 奖励计算是否确认不绑定模拟组合涨跌，只绑定学习动作和活动规则？
 

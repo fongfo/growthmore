@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Growthmore",
+    "slug": "growthmore",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "growthmore",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.growthmore.mobile"
+    },
+    "android": {
+      "package": "com.growthmore.mobile"
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:4000"
+    }
+  }
+}
+
