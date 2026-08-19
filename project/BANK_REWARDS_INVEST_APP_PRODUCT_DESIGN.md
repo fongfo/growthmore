@@ -604,6 +604,13 @@ CTA：
 - 所有颜色必须通过语义 token 使用，组件中不直接散落 raw hex。
 - 支持 light / dark mode 时，要分别校验文本、图标、边框和禁用态对比度。
 
+移动端实现 source of truth：
+
+- 主题 token：`apps/mobile/src/theme/tokens.ts`。
+- 基础组件：`apps/mobile/src/components/`。
+- 第一批组件范围：`Screen`、`AppText`、`Card`、`Button`、`Badge`、`MetricCard`、`ProgressBar`、`DisclosureBanner`。
+- 后续页面应优先复用这些组件和语义 token；只有当组件无法表达新的业务状态时才扩展组件库。
+
 ### 13.5 图标
 
 - 使用 Lucide、Heroicons 或银行设计系统图标。
