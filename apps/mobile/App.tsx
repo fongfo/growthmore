@@ -1,128 +1,152 @@
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { demoTenant, productLoopSteps } from "@growthmore/shared";
+import {
+  AppText,
+  Badge,
+  Button,
+  Card,
+  DisclosureBanner,
+  MetricCard,
+  ProgressBar,
+  Screen
+} from "./src/components";
+import { colors, spacing } from "./src/theme";
 
 export default function App() {
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <>
       <StatusBar style="dark" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.heroPanel}>
-          <Text style={styles.eyebrow}>{demoTenant.displayName}</Text>
-          <Text style={styles.title}>{demoTenant.appName} Demo MVP</Text>
-          <Text style={styles.copy}>
+      <Screen>
+        <Card style={styles.heroPanel}>
+          <View style={styles.heroHeader}>
+            <AppText color="primary" variant="eyebrow">
+              {demoTenant.displayName}
+            </AppText>
+            <Badge label="Mobile App MVP" tone="learning" />
+          </View>
+          <AppText variant="title">{demoTenant.appName}</AppText>
+          <AppText color="textSecondary" variant="body">
             先跑通任务奖励、模拟学习、奖励罐和提现审核闭环，后续开发全部从 Jira BGM
             任务和 development 分支推进。
-          </Text>
+          </AppText>
           <View style={styles.themeSwatchRow} accessibilityLabel="当前银行主题色">
             <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.primary }]} />
             <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.cta }]} />
             <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.growth }]} />
             <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.reward }]} />
           </View>
+          <View style={styles.heroActions}>
+            <Button label="开始今日任务" />
+            <Button label="查看规则" variant="secondary" />
+          </View>
+        </Card>
+
+        <View style={styles.metrics}>
+          <MetricCard badge="可配置" helper="不是现金，不可直接提现" label="虚拟成长金" value="12,800" />
+          <MetricCard helper="按活动规则领取" label="奖励罐" value="¥28.50" />
         </View>
 
-        <View style={styles.loopPanel}>
-          <Text style={styles.sectionTitle}>Product Loop</Text>
+        <DisclosureBanner
+          body="虚拟成长金只用于投资学习；奖励罐中的金额才可按活动规则申请提现。"
+          title="资金性质提醒"
+        />
+
+        <Card style={styles.loopPanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="heading">Product Loop</AppText>
+              <AppText color="textSecondary" variant="caption">
+                Earn, Allocate, Grow, Collect 的移动端基础组件样式
+              </AppText>
+            </View>
+            <Badge label="4 steps" />
+          </View>
+          <ProgressBar accessibilityLabel="当前产品闭环完成度 25%" value={0.25} />
           {productLoopSteps.map((step) => (
             <View key={step.id} style={styles.loopRow}>
-              <Text style={styles.stepLabel}>{step.label}</Text>
-              <Text style={styles.stepTitle}>{step.title}</Text>
+              <View style={styles.stepIndex}>
+                <AppText color="primary" variant="label">
+                  {step.label}
+                </AppText>
+              </View>
+              <View style={styles.stepCopy}>
+                <AppText variant="bodyStrong">{step.title}</AppText>
+                <AppText color="textSecondary" variant="caption">
+                  {step.id}
+                </AppText>
+              </View>
             </View>
           ))}
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+        </Card>
+      </Screen>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#F8FAFC"
-  },
-  content: {
-    flexGrow: 1,
-    gap: 16,
-    justifyContent: "center",
-    padding: 20
-  },
   heroPanel: {
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    padding: 24,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.08,
-    shadowRadius: 32,
-    elevation: 2
+    gap: spacing.lg
   },
-  eyebrow: {
-    marginBottom: 12,
-    color: "#1E3A8A",
-    fontSize: 14,
-    fontWeight: "700"
+  heroHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
   },
-  title: {
-    color: "#0F172A",
-    fontSize: 36,
-    fontWeight: "800",
-    lineHeight: 40
+  heroActions: {
+    gap: spacing.md
   },
-  copy: {
-    marginTop: 12,
-    color: "#64748B",
-    fontSize: 16,
-    lineHeight: 26
+  metrics: {
+    flexDirection: "row",
+    gap: spacing.md
   },
   themeSwatchRow: {
     flexDirection: "row",
-    gap: 8,
-    marginTop: 20
+    gap: spacing.sm
   },
   themeSwatch: {
-    borderColor: "#E2E8F0",
+    borderColor: colors.light.border,
     borderRadius: 999,
     borderWidth: 1,
     height: 28,
     width: 28
   },
   loopPanel: {
-    gap: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    padding: 20
+    gap: spacing.lg
   },
-  sectionTitle: {
-    color: "#0F172A",
-    fontSize: 18,
-    fontWeight: "800"
+  sectionHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.lg,
+    justifyContent: "space-between"
+  },
+  sectionCopy: {
+    flex: 1,
+    gap: spacing.xs
   },
   loopRow: {
-    minHeight: 52,
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
+    backgroundColor: colors.light.surface,
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: colors.light.border,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 56,
+    padding: spacing.md
   },
-  stepLabel: {
-    color: "#64748B",
-    fontSize: 13,
-    fontWeight: "700"
+  stepIndex: {
+    alignItems: "center",
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 12,
+    height: 44,
+    justifyContent: "center",
+    width: 44
   },
-  stepTitle: {
-    color: "#0F172A",
-    fontSize: 16,
-    fontWeight: "800"
+  stepCopy: {
+    flex: 1,
+    gap: spacing.xs
   }
 });
 
