@@ -1,0 +1,71 @@
+name: Bug report
+description: Track a Growthmore defect through Jira and GitHub.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: input
+    id: jira
+    attributes:
+      label: Jira issue
+      description: Use a BGM Bug issue when available.
+      placeholder: BGM-123
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - apps/mobile
+        - apps/api
+        - packages/shared
+        - project/docs
+        - workflow/ci
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include device, OS, app command, user role, and data state when relevant.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk impact
+      description: Note any reward, ledger, withdrawal, disclosure, privacy, or security impact.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Fix validation plan
+      value: |
+        - [ ] Add or update regression test
+        - [ ] npm run lint
+        - [ ] npm run typecheck
+        - [ ] npm run test
+        - [ ] npm run build
+        - [ ] npm run security:ci if dependency/API/env behavior changed
+    validations:
+      required: true
