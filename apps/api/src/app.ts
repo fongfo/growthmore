@@ -10,6 +10,8 @@ import {
   demoTenant,
   demoTodayHomeSummary,
   demoUserTasks,
+  demoVirtualBalance,
+  demoVirtualBalanceLedger,
   type TaskAction,
   type UserTask
 } from "@growthmore/shared";
@@ -75,6 +77,18 @@ export function createApp() {
   app.get("/api/app/home", (_request, response) => {
     response.json({
       home: demoTodayHomeSummary
+    });
+  });
+
+  app.get("/api/virtual-balance", (_request, response) => {
+    response.json({
+      balance: demoVirtualBalance
+    });
+  });
+
+  app.get("/api/virtual-balance/ledger", (_request, response) => {
+    response.json({
+      ledger: demoVirtualBalanceLedger
     });
   });
 

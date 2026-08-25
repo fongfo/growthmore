@@ -7,6 +7,8 @@ import {
   demoTenant,
   demoTodayHomeSummary,
   demoUserTasks,
+  demoVirtualBalance,
+  demoVirtualBalanceLedger,
   taskStatusCopy,
   type TaskStatus
 } from "@growthmore/shared";
@@ -25,8 +27,9 @@ import { colors, spacing } from "./src/theme";
 const home = demoTodayHomeSummary;
 const taskBoard = demoTaskBoardSummary;
 const taskList = demoUserTasks.slice(0, 5);
+const recentLedger = demoVirtualBalanceLedger.slice(-3).reverse();
 const progressPercent = Math.round(home.level.progressPercent * 100);
-const virtualGrowthAmount = home.balances.virtualGrowthAmount.toLocaleString("zh-CN");
+const virtualGrowthAmount = demoVirtualBalance.availableAmount.toLocaleString("zh-CN");
 const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
 const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
 const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
@@ -74,9 +77,49 @@ export default function App() {
         </Card>
 
         <View style={styles.metrics}>
-          <MetricCard badge="学习资产" helper="仅用于模拟投资学习" label="虚拟成长金" value={virtualGrowthAmount} />
+          <MetricCard badge="可用" helper="不可直接提现" label="虚拟成长金" value={virtualGrowthAmount} />
           <MetricCard helper="满足活动规则后可申请领取" label="奖励罐" value={rewardJarAmount} />
         </View>
+        <Card style={styles.balancePanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="heading">成长金余额</AppText>
+              <AppText color="textSecondary" variant="caption">
+                今日已赚 {demoVirtualBalance.todayEarnedAmount.toLocaleString("zh-CN")} / {demoVirtualBalance.dailyEarnLimitAmount.toLocaleString("zh-CN")}
+              </AppText>
+            </View>
+            <Badge label="流水推导" tone="success" />
+          </View>
+          <View style={styles.balanceBreakdown}>
+            <View style={styles.balanceBucket}>
+              <AppText color="textSecondary" variant="label">可用</AppText>
+              <AppText variant="bodyStrong">{demoVirtualBalance.availableAmount.toLocaleString("zh-CN")}</AppText>
+            </View>
+            <View style={styles.balanceBucket}>
+              <AppText color="textSecondary" variant="label">已配置</AppText>
+              <AppText variant="bodyStrong">{demoVirtualBalance.allocatedAmount.toLocaleString("zh-CN")}</AppText>
+            </View>
+            <View style={styles.balanceBucket}>
+              <AppText color="textSecondary" variant="label">冻结</AppText>
+              <AppText variant="bodyStrong">{demoVirtualBalance.frozenAmount.toLocaleString("zh-CN")}</AppText>
+            </View>
+          </View>
+          <View style={styles.ledgerList}>
+            {recentLedger.map((entry) => (
+              <View key={entry.id} style={styles.ledgerRow}>
+                <View style={styles.sectionCopy}>
+                  <AppText variant="bodyStrong">{entry.description}</AppText>
+                  <AppText color="textSecondary" variant="caption">
+                    {entry.ruleVersion} · {entry.sourceType}
+                  </AppText>
+                </View>
+                <AppText color={entry.entryType === "clawback" || entry.entryType === "freeze" ? "danger" : "success"} variant="label">
+                  {entry.entryType === "allocate" || entry.entryType === "freeze" || entry.entryType === "clawback" ? "-" : "+"}{entry.amount.toLocaleString("zh-CN")}
+                </AppText>
+              </View>
+            ))}
+          </View>
+        </Card>
 
         <Card style={styles.taskBoardPanel}>
           <View style={styles.sectionHeader}>
@@ -182,6 +225,34 @@ const styles = StyleSheet.create({
   metrics: {
     flexDirection: "row",
     gap: spacing.md
+  },
+  balancePanel: {
+    gap: spacing.lg
+  },
+  balanceBreakdown: {
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  balanceBucket: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 12,
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
+    padding: spacing.md
+  },
+  ledgerList: {
+    gap: spacing.md
+  },
+  ledgerRow: {
+    alignItems: "center",
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.md
   },
   taskBoardPanel: {
     gap: spacing.lg
