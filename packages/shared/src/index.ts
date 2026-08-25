@@ -83,6 +83,62 @@ export type LinkedBankAccount = {
   isWithdrawalAccount: boolean;
 };
 
+export type TaskCategory = "habit" | "learning" | "banking" | "campaign";
+
+export type TaskStatus =
+  | "available"
+  | "in_progress"
+  | "pending_verification"
+  | "completed"
+  | "claimed"
+  | "rejected"
+  | "reversed";
+
+export type TaskAction = "start" | "submit" | "approve" | "reject" | "retry" | "claim" | "reverse";
+
+export type TaskReward = {
+  virtualGrowthAmount: number;
+  rewardJarAmount: number;
+  currency: "CNY";
+  badgeLabel?: string;
+};
+
+export type TaskDefinition = {
+  id: string;
+  category: TaskCategory;
+  title: string;
+  description: string;
+  completionCriteria: string;
+  riskNotice: string;
+  reward: TaskReward;
+  expiresAt: string;
+  estimatedMinutes: number;
+};
+
+export type UserTask = TaskDefinition & {
+  userId: MockUserSession["user"]["id"];
+  status: TaskStatus;
+  availableActions: TaskAction[];
+  rejectionReason: string | null;
+  startedAt: string | null;
+  submittedAt: string | null;
+  completedAt: string | null;
+  claimedAt: string | null;
+  updatedAt: string;
+};
+
+export type TaskBoardSummary = {
+  todayAvailableVirtualGrowthAmount: number;
+  todayAvailableRewardJarAmount: number;
+  completionStreakDays: number;
+  totalTaskCount: number;
+  statusCounts: Record<TaskStatus, number>;
+  categoryFilters: Array<{
+    id: "all" | TaskCategory | "completed";
+    label: string;
+  }>;
+};
+
 export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
 
 export type TodayHomeSummary = {
@@ -199,6 +255,222 @@ export const demoLinkedBankAccount: LinkedBankAccount = {
   isWithdrawalAccount: true
 };
 
+export const taskStateTransitions: Record<TaskStatus, Partial<Record<TaskAction, TaskStatus>>> = {
+  available: { start: "in_progress" },
+  in_progress: { submit: "pending_verification" },
+  pending_verification: { approve: "completed", reject: "rejected" },
+  completed: { claim: "claimed" },
+  claimed: { reverse: "reversed" },
+  rejected: { retry: "in_progress" },
+  reversed: {}
+};
+
+export const taskStatusCopy: Record<
+  TaskStatus,
+  {
+    label: string;
+    ctaLabel: string;
+  }
+> = {
+  available: { label: "可完成", ctaLabel: "去完成" },
+  in_progress: { label: "进行中", ctaLabel: "提交验证" },
+  pending_verification: { label: "验证中", ctaLabel: "等待校验" },
+  completed: { label: "已完成", ctaLabel: "领取奖励" },
+  claimed: { label: "已领取", ctaLabel: "查看奖励" },
+  rejected: { label: "未通过", ctaLabel: "查看原因" },
+  reversed: { label: "已撤销", ctaLabel: "查看记录" }
+};
+
+export function getAvailableTaskActions(status: TaskStatus): TaskAction[] {
+  return Object.keys(taskStateTransitions[status]) as TaskAction[];
+}
+
+export function getNextTaskStatus(status: TaskStatus, action: TaskAction): TaskStatus | null {
+  return taskStateTransitions[status][action] ?? null;
+}
+
+export function canTransitionTask(status: TaskStatus, action: TaskAction): boolean {
+  return getNextTaskStatus(status, action) !== null;
+}
+
+export function transitionTaskStatus(status: TaskStatus, action: TaskAction): TaskStatus {
+  const nextStatus = getNextTaskStatus(status, action);
+
+  if (!nextStatus) {
+    throw new Error(`Invalid task transition: ${status} -> ${action}`);
+  }
+
+  return nextStatus;
+}
+
+const demoNow = "2026-08-25T15:00:00+08:00";
+const demoTaskExpiry = "2026-08-31T23:59:59+08:00";
+
+function withUserTaskState(task: TaskDefinition, status: TaskStatus, state?: Partial<UserTask>): UserTask {
+  return {
+    ...task,
+    userId: demoMockSession.user.id,
+    status,
+    availableActions: getAvailableTaskActions(status),
+    rejectionReason: state?.rejectionReason ?? null,
+    startedAt: state?.startedAt ?? null,
+    submittedAt: state?.submittedAt ?? null,
+    completedAt: state?.completedAt ?? null,
+    claimedAt: state?.claimedAt ?? null,
+    updatedAt: state?.updatedAt ?? demoNow
+  };
+}
+
+export function applyTaskAction(task: UserTask, action: TaskAction): UserTask {
+  const nextStatus = transitionTaskStatus(task.status, action);
+
+  return {
+    ...task,
+    status: nextStatus,
+    availableActions: getAvailableTaskActions(nextStatus),
+    rejectionReason: action === "reject" ? "提交记录与任务条件不匹配，请检查后重试。" : null,
+    startedAt: action === "start" || action === "retry" ? demoNow : task.startedAt,
+    submittedAt: action === "submit" ? demoNow : task.submittedAt,
+    completedAt: action === "approve" ? demoNow : task.completedAt,
+    claimedAt: action === "claim" ? demoNow : task.claimedAt,
+    updatedAt: demoNow
+  };
+}
+
+const taskDefinitions: TaskDefinition[] = [
+  {
+    id: "daily-check-in",
+    category: "habit",
+    title: "完成今日签到",
+    description: "打开 App 并确认今日金融健康提醒，建立连续学习习惯。",
+    completionCriteria: "每日自然日内只能完成一次签到。",
+    riskNotice: "频繁切换设备或账号会触发复核，避免重复领取。",
+    reward: { virtualGrowthAmount: 100, rewardJarAmount: 0, currency: "CNY" },
+    expiresAt: demoTaskExpiry,
+    estimatedMinutes: 1
+  },
+  {
+    id: "risk-lesson",
+    category: "learning",
+    title: "完成 5 分钟风险分散小课",
+    description: "学习为什么模拟组合不该只押注一个行业，然后获得今日成长金。",
+    completionCriteria: "完成课程阅读并通过 1 道理解题。",
+    riskNotice: "模拟投资结果仅用于学习，不代表真实投资收益。",
+    reward: { virtualGrowthAmount: 300, rewardJarAmount: 1.2, currency: "CNY", badgeLabel: "风险认知" },
+    expiresAt: demoTaskExpiry,
+    estimatedMinutes: 5
+  },
+  {
+    id: "auto-savings-mock",
+    category: "banking",
+    title: "开启自动储蓄 mock",
+    description: "模拟开启每月固定储蓄计划，用于验证银行任务校验流程。",
+    completionCriteria: "提交 mock 自动储蓄设置后等待系统校验。",
+    riskNotice: "Demo 阶段不会创建真实储蓄计划或扣款。",
+    reward: { virtualGrowthAmount: 800, rewardJarAmount: 2.5, currency: "CNY" },
+    expiresAt: demoTaskExpiry,
+    estimatedMinutes: 3
+  },
+  {
+    id: "profile-kyc-mock",
+    category: "banking",
+    title: "完成资料补全 mock",
+    description: "使用 mock KYC 状态补全基础资料，解锁后续银行任务。",
+    completionCriteria: "mock KYC 状态为已验证。",
+    riskNotice: "这不代表真实 KYC、真实银行账户查询或真实打款能力。",
+    reward: { virtualGrowthAmount: 1200, rewardJarAmount: 0, currency: "CNY" },
+    expiresAt: demoTaskExpiry,
+    estimatedMinutes: 2
+  },
+  {
+    id: "savings-goal",
+    category: "habit",
+    title: "设置一个储蓄目标",
+    description: "写下本月储蓄目标，让模拟配置有明确学习目标。",
+    completionCriteria: "目标名称和金额必须完整。",
+    riskNotice: "储蓄目标只是计划记录，不代表收益承诺。",
+    reward: { virtualGrowthAmount: 200, rewardJarAmount: 0, currency: "CNY" },
+    expiresAt: demoTaskExpiry,
+    estimatedMinutes: 2
+  },
+  {
+    id: "bank-account-linked",
+    category: "banking",
+    title: "绑定提现账户 mock",
+    description: "确认已绑定的 mock 银行账户，后续奖励领取会显示该账户。",
+    completionCriteria: "账户状态为 linked 且标记为提现账户。",
+    riskNotice: "Demo 账户不表示真实银行账户校验或真实打款。",
+    reward: { virtualGrowthAmount: 500, rewardJarAmount: 0, currency: "CNY" },
+    expiresAt: demoTaskExpiry,
+    estimatedMinutes: 1
+  }
+];
+
+export const demoUserTasks: UserTask[] = [
+  withUserTaskState(taskDefinitions[0]!, "available"),
+  withUserTaskState(taskDefinitions[1]!, "in_progress", { startedAt: "2026-08-25T14:50:00+08:00" }),
+  withUserTaskState(taskDefinitions[2]!, "pending_verification", {
+    startedAt: "2026-08-25T14:30:00+08:00",
+    submittedAt: "2026-08-25T14:35:00+08:00"
+  }),
+  withUserTaskState(taskDefinitions[3]!, "completed", {
+    startedAt: "2026-08-24T10:00:00+08:00",
+    submittedAt: "2026-08-24T10:04:00+08:00",
+    completedAt: "2026-08-24T10:05:00+08:00"
+  }),
+  withUserTaskState(taskDefinitions[4]!, "rejected", {
+    startedAt: "2026-08-24T11:00:00+08:00",
+    submittedAt: "2026-08-24T11:03:00+08:00",
+    rejectionReason: "目标金额缺失，请补充后重新提交。"
+  }),
+  withUserTaskState(taskDefinitions[5]!, "claimed", {
+    startedAt: "2026-08-24T12:00:00+08:00",
+    submittedAt: "2026-08-24T12:01:00+08:00",
+    completedAt: "2026-08-24T12:02:00+08:00",
+    claimedAt: "2026-08-24T12:03:00+08:00"
+  })
+];
+
+function createEmptyStatusCounts(): Record<TaskStatus, number> {
+  return {
+    available: 0,
+    in_progress: 0,
+    pending_verification: 0,
+    completed: 0,
+    claimed: 0,
+    rejected: 0,
+    reversed: 0
+  };
+}
+
+export function createTaskBoardSummary(tasks: UserTask[]): TaskBoardSummary {
+  const actionableTasks = tasks.filter((task) => task.status !== "claimed" && task.status !== "reversed");
+  const statusCounts = tasks.reduce((counts, task) => {
+    counts[task.status] += 1;
+    return counts;
+  }, createEmptyStatusCounts());
+
+  return {
+    todayAvailableVirtualGrowthAmount: actionableTasks.reduce(
+      (total, task) => total + task.reward.virtualGrowthAmount,
+      0
+    ),
+    todayAvailableRewardJarAmount: actionableTasks.reduce((total, task) => total + task.reward.rewardJarAmount, 0),
+    completionStreakDays: 4,
+    totalTaskCount: tasks.length,
+    statusCounts,
+    categoryFilters: [
+      { id: "all", label: "全部" },
+      { id: "learning", label: "学习" },
+      { id: "banking", label: "银行任务" },
+      { id: "campaign", label: "活动" },
+      { id: "completed", label: "已完成" }
+    ]
+  };
+}
+
+export const demoTaskBoardSummary = createTaskBoardSummary(demoUserTasks);
+
 export const demoTodayHomeSummary: TodayHomeSummary = {
   userId: demoMockSession.user.id,
   tenantSlug: demoTenant.slug,
@@ -214,7 +486,7 @@ export const demoTodayHomeSummary: TodayHomeSummary = {
     currency: "CNY"
   },
   recommendedTask: {
-    id: "today-task-001",
+    id: "risk-lesson",
     type: "learning",
     title: "完成 5 分钟风险分散小课",
     description: "学习为什么模拟组合不该只押注一个行业，然后获得今日成长金。",

@@ -1,11 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyTaskAction,
+  canTransitionTask,
+  createTaskBoardSummary,
   defaultTenantTheme,
   demoLinkedBankAccount,
   demoMockSession,
+  demoTaskBoardSummary,
   demoTenant,
   demoTodayHomeSummary,
-  productLoopSteps
+  demoUserTasks,
+  getAvailableTaskActions,
+  getNextTaskStatus,
+  productLoopSteps,
+  taskStatusCopy,
+  transitionTaskStatus
 } from "./index";
 
 describe("shared project constants", () => {
@@ -50,6 +59,7 @@ describe("shared project constants", () => {
     expect(demoTodayHomeSummary.level.progressPercent).toBeLessThanOrEqual(1);
     expect(demoTodayHomeSummary.balances.virtualGrowthAmount).toBeGreaterThan(0);
     expect(demoTodayHomeSummary.balances.rewardJarAmount).toBeGreaterThan(0);
+    expect(demoTodayHomeSummary.recommendedTask.id).toBe("risk-lesson");
     expect(demoTodayHomeSummary.recommendedTask.ctaLabel).toBe("开始今日任务");
     expect(demoTodayHomeSummary.withdrawalWindow.label).toContain("本月提现窗口");
     expect(demoTodayHomeSummary.nextActions.map((action) => action.id)).toEqual([
@@ -57,5 +67,68 @@ describe("shared project constants", () => {
       "reward",
       "learning"
     ]);
+  });
+});
+
+describe("task state machine", () => {
+  it("exposes every MVP task status with user-facing copy", () => {
+    expect(Object.keys(taskStatusCopy)).toEqual([
+      "available",
+      "in_progress",
+      "pending_verification",
+      "completed",
+      "claimed",
+      "rejected",
+      "reversed"
+    ]);
+    expect(taskStatusCopy.completed.ctaLabel).toBe("领取奖励");
+  });
+
+  it("allows only documented transitions", () => {
+    expect(getNextTaskStatus("available", "start")).toBe("in_progress");
+    expect(getNextTaskStatus("in_progress", "submit")).toBe("pending_verification");
+    expect(getNextTaskStatus("pending_verification", "approve")).toBe("completed");
+    expect(getNextTaskStatus("pending_verification", "reject")).toBe("rejected");
+    expect(getNextTaskStatus("completed", "claim")).toBe("claimed");
+    expect(getNextTaskStatus("claimed", "reverse")).toBe("reversed");
+    expect(getNextTaskStatus("rejected", "retry")).toBe("in_progress");
+    expect(canTransitionTask("claimed", "start")).toBe(false);
+    expect(() => transitionTaskStatus("claimed", "start")).toThrow("Invalid task transition");
+  });
+
+  it("applies actions and refreshes available actions", () => {
+    const availableTask = demoUserTasks.find((task) => task.status === "available");
+
+    expect(availableTask).toBeDefined();
+    const startedTask = applyTaskAction(availableTask!, "start");
+
+    expect(startedTask.status).toBe("in_progress");
+    expect(startedTask.availableActions).toEqual(["submit"]);
+    expect(startedTask.startedAt).toBeTruthy();
+  });
+
+  it("keeps rejected task retry paths visible", () => {
+    const rejectedTask = demoUserTasks.find((task) => task.status === "rejected");
+
+    expect(rejectedTask?.rejectionReason).toContain("目标金额缺失");
+    expect(getAvailableTaskActions("rejected")).toEqual(["retry"]);
+  });
+
+  it("builds the task board summary from demo user tasks", () => {
+    const summary = createTaskBoardSummary(demoUserTasks);
+
+    expect(summary).toEqual(demoTaskBoardSummary);
+    expect(summary.totalTaskCount).toBe(6);
+    expect(summary.statusCounts).toMatchObject({
+      available: 1,
+      in_progress: 1,
+      pending_verification: 1,
+      completed: 1,
+      claimed: 1,
+      rejected: 1,
+      reversed: 0
+    });
+    expect(summary.todayAvailableVirtualGrowthAmount).toBeGreaterThan(0);
+    expect(summary.categoryFilters.map((filter) => filter.id)).toContain("banking");
   });
 });

@@ -107,6 +107,7 @@ describe("app home", () => {
         currency: "CNY"
       },
       recommendedTask: {
+        id: "risk-lesson",
         type: "learning",
         ctaLabel: "开始今日任务"
       },
@@ -116,5 +117,98 @@ describe("app home", () => {
     });
     expect(response.body.home.level.progressPercent).toBeGreaterThan(0);
     expect(response.body.home.nextActions).toHaveLength(3);
+  });
+});
+
+describe("task system", () => {
+  it("returns the task board summary and task list", async () => {
+    const response = await request(createApp()).get("/api/tasks");
+
+    expect(response.status).toBe(200);
+    expect(response.body.summary).toMatchObject({
+      completionStreakDays: 4,
+      totalTaskCount: 6,
+      statusCounts: {
+        available: 1,
+        in_progress: 1,
+        pending_verification: 1,
+        completed: 1,
+        claimed: 1,
+        rejected: 1,
+        reversed: 0
+      }
+    });
+    expect(response.body.tasks.map((task: { id: string }) => task.id)).toContain("risk-lesson");
+  });
+
+  it("returns a task detail", async () => {
+    const response = await request(createApp()).get("/api/tasks/risk-lesson");
+
+    expect(response.status).toBe(200);
+    expect(response.body.task).toMatchObject({
+      id: "risk-lesson",
+      category: "learning",
+      status: "in_progress",
+      availableActions: ["submit"]
+    });
+  });
+
+  it("supports starting an available task", async () => {
+    const response = await request(createApp()).post("/api/tasks/daily-check-in/start");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      action: "start",
+      task: {
+        id: "daily-check-in",
+        status: "in_progress",
+        availableActions: ["submit"]
+      }
+    });
+  });
+
+  it("supports submitting an in-progress task", async () => {
+    const response = await request(createApp()).post("/api/tasks/risk-lesson/submit");
+
+    expect(response.status).toBe(200);
+    expect(response.body.task.status).toBe("pending_verification");
+    expect(response.body.task.availableActions).toEqual(["approve", "reject"]);
+  });
+
+  it("supports approving or rejecting a pending task", async () => {
+    const approved = await request(createApp()).post("/api/tasks/auto-savings-mock/verify").send({
+      result: "approved"
+    });
+    const rejected = await request(createApp()).post("/api/tasks/auto-savings-mock/verify").send({
+      result: "rejected"
+    });
+
+    expect(approved.status).toBe(200);
+    expect(approved.body.task.status).toBe("completed");
+    expect(rejected.status).toBe(200);
+    expect(rejected.body.task.status).toBe("rejected");
+    expect(rejected.body.task.rejectionReason).toContain("不匹配");
+  });
+
+  it("supports claiming a completed task", async () => {
+    const response = await request(createApp()).post("/api/tasks/profile-kyc-mock/claim");
+
+    expect(response.status).toBe(200);
+    expect(response.body.task.status).toBe("claimed");
+    expect(response.body.task.claimedAt).toBeTruthy();
+  });
+
+  it("rejects invalid task transitions", async () => {
+    const response = await request(createApp()).post("/api/tasks/bank-account-linked/start");
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe("invalid_task_transition");
+  });
+
+  it("returns 404 for unknown task ids", async () => {
+    const response = await request(createApp()).get("/api/tasks/missing-task");
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe("task_not_found");
   });
 });
