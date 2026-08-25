@@ -731,6 +731,9 @@ CTA：
 
 - `GET /api/app/home`
 - `GET /api/tenant/current`
+- `POST /api/auth/mock-login`
+- `GET /api/auth/session`
+- `GET /api/bank-accounts/current`
 - `GET /api/tasks?status=&type=`
 - `POST /api/tasks/:id/start`
 - `POST /api/tasks/:id/submit`
@@ -778,6 +781,7 @@ CTA：
 Demo MVP 包含：
 
 - Mock 登录和单一银行租户。
+- Mock 用户会话和已绑定银行账户，用于 Demo 阶段跑通 KYC、任务资格、奖励领取和提现账户展示；mock 账户不得表示真实 KYC、真实银行账户查询或真实打款能力。
 - 首页。
 - 任务列表、任务详情、任务完成。
 - 虚拟成长金余额和流水。

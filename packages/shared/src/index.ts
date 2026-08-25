@@ -53,6 +53,34 @@ export type ProductLoopStep = {
   label: string;
   title: string;
 };
+export type KycStatus = "not_started" | "mock_verified";
+
+export type BankAccountStatus = "not_linked" | "linked" | "verification_required";
+
+export type MockUserSession = {
+  user: {
+    id: string;
+    displayName: string;
+    phoneMasked: string;
+    tenantSlug: BankTenant["slug"];
+    kycStatus: KycStatus;
+  };
+  auth: {
+    accessToken: string;
+    tokenType: "Bearer";
+    expiresInSeconds: number;
+  };
+};
+
+export type LinkedBankAccount = {
+  id: string;
+  bankName: string;
+  accountName: string;
+  accountNumberMasked: string;
+  currency: "CNY";
+  status: BankAccountStatus;
+  isWithdrawalAccount: boolean;
+};
 
 export const defaultTenantTheme: TenantTheme = {
   colors: {
@@ -107,4 +135,27 @@ export const productLoopSteps: ProductLoopStep[] = [
   { id: "grow", label: "03", title: "运行学习周期" },
   { id: "collect", label: "04", title: "领取活动奖励" }
 ];
+export const demoMockSession: MockUserSession = {
+  user: {
+    id: "mock-user-001",
+    displayName: "Alex",
+    phoneMasked: "138****4288",
+    tenantSlug: demoTenant.slug,
+    kycStatus: "mock_verified"
+  },
+  auth: {
+    accessToken: "mock-demo-token",
+    tokenType: "Bearer",
+    expiresInSeconds: 3600
+  }
+};
 
+export const demoLinkedBankAccount: LinkedBankAccount = {
+  id: "mock-account-001",
+  bankName: demoTenant.displayName,
+  accountName: demoMockSession.user.displayName,
+  accountNumberMasked: "**** **** **** 4288",
+  currency: "CNY",
+  status: "linked",
+  isWithdrawalAccount: true
+};

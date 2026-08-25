@@ -1,6 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
-import { demoTenant, productLoopSteps } from "@growthmore/shared";
+import { demoLinkedBankAccount, demoMockSession, demoTenant, productLoopSteps } from "@growthmore/shared";
 import {
   AppText,
   Badge,
@@ -51,6 +51,38 @@ export default function App() {
           body="虚拟成长金只用于投资学习；奖励罐中的金额才可按活动规则申请提现。"
           title="资金性质提醒"
         />
+        <Card style={styles.accountPanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="heading">Mock 登录与绑卡</AppText>
+              <AppText color="textSecondary" variant="caption">
+                BGM-5 的移动端状态入口，后续接入真实登录和银行账户校验
+              </AppText>
+            </View>
+            <Badge label="已验证" tone="success" />
+          </View>
+          <View style={styles.accountRows}>
+            <View style={styles.accountRow}>
+              <AppText color="textSecondary" variant="label">
+                用户
+              </AppText>
+              <AppText variant="bodyStrong">{demoMockSession.user.displayName}</AppText>
+            </View>
+            <View style={styles.accountRow}>
+              <AppText color="textSecondary" variant="label">
+                手机
+              </AppText>
+              <AppText variant="bodyStrong">{demoMockSession.user.phoneMasked}</AppText>
+            </View>
+            <View style={styles.accountRow}>
+              <AppText color="textSecondary" variant="label">
+                提现账户
+              </AppText>
+              <AppText variant="bodyStrong">{demoLinkedBankAccount.accountNumberMasked}</AppText>
+            </View>
+          </View>
+          <Button label="管理绑定账户" variant="secondary" />
+        </Card>
 
         <Card style={styles.loopPanel}>
           <View style={styles.sectionHeader}>
@@ -115,6 +147,18 @@ const styles = StyleSheet.create({
   loopPanel: {
     gap: spacing.lg
   },
+  accountPanel: {
+    gap: spacing.lg
+  },
+  accountRows: {
+    gap: spacing.md
+  },
+  accountRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.lg,
+    justifyContent: "space-between"
+  },
   sectionHeader: {
     alignItems: "flex-start",
     flexDirection: "row",
@@ -149,4 +193,3 @@ const styles = StyleSheet.create({
     gap: spacing.xs
   }
 });
-
