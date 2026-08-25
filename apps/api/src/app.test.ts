@@ -41,6 +41,7 @@ describe("tenant configuration", () => {
     expect(response.body.tenant.disclosureCopy.virtualBalanceNotice).toContain("不是现金");
   });
 });
+
 describe("mock auth and bank account binding", () => {
   it("creates a mock verified user session", async () => {
     const response = await request(createApp()).post("/api/auth/mock-login").send({
@@ -84,5 +85,36 @@ describe("mock auth and bank account binding", () => {
       status: "linked",
       isWithdrawalAccount: true
     });
+  });
+});
+
+describe("app home", () => {
+  it("returns the Today home summary for the mobile app", async () => {
+    const response = await request(createApp()).get("/api/app/home");
+
+    expect(response.status).toBe(200);
+    expect(response.body.home).toMatchObject({
+      userId: "mock-user-001",
+      tenantSlug: "demo-bank",
+      level: {
+        label: "Level 2",
+        planName: "稳健成长计划",
+        remainingTaskCount: 2
+      },
+      balances: {
+        virtualGrowthAmount: 12800,
+        rewardJarAmount: 28.5,
+        currency: "CNY"
+      },
+      recommendedTask: {
+        type: "learning",
+        ctaLabel: "开始今日任务"
+      },
+      withdrawalWindow: {
+        status: "upcoming"
+      }
+    });
+    expect(response.body.home.level.progressPercent).toBeGreaterThan(0);
+    expect(response.body.home.nextActions).toHaveLength(3);
   });
 });

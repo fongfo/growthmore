@@ -1,6 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
-import { demoLinkedBankAccount, demoMockSession, demoTenant, productLoopSteps } from "@growthmore/shared";
+import { demoLinkedBankAccount, demoMockSession, demoTenant, demoTodayHomeSummary } from "@growthmore/shared";
 import {
   AppText,
   Badge,
@@ -13,151 +13,156 @@ import {
 } from "./src/components";
 import { colors, spacing } from "./src/theme";
 
+const home = demoTodayHomeSummary;
+const progressPercent = Math.round(home.level.progressPercent * 100);
+const virtualGrowthAmount = home.balances.virtualGrowthAmount.toLocaleString("zh-CN");
+const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
+
 export default function App() {
   return (
     <>
       <StatusBar style="dark" />
       <Screen>
-        <Card style={styles.heroPanel}>
-          <View style={styles.heroHeader}>
-            <AppText color="primary" variant="eyebrow">
+        <View style={styles.topBar}>
+          <View style={styles.identityBlock}>
+            <AppText color="textSecondary" variant="label">
               {demoTenant.displayName}
             </AppText>
-            <Badge label="Mobile App MVP" tone="learning" />
+            <AppText variant="heading">Hi, {demoMockSession.user.displayName}</AppText>
           </View>
-          <AppText variant="title">{demoTenant.appName}</AppText>
+          <Badge label="已登录" tone="success" />
+        </View>
+
+        <Card style={styles.todayPanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText color="primary" variant="eyebrow">
+                Today
+              </AppText>
+              <AppText variant="title">{home.level.planName}</AppText>
+            </View>
+            <Badge label={home.level.label} tone="learning" />
+          </View>
           <AppText color="textSecondary" variant="body">
-            先跑通任务奖励、模拟学习、奖励罐和提现审核闭环，后续开发全部从 Jira BGM
-            任务和 development 分支推进。
+            计划进度 {progressPercent}%，今天还剩 {home.level.remainingTaskCount} 个任务。
           </AppText>
-          <View style={styles.themeSwatchRow} accessibilityLabel="当前银行主题色">
-            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.primary }]} />
-            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.cta }]} />
-            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.growth }]} />
-            <View style={[styles.themeSwatch, { backgroundColor: demoTenant.theme.colors.reward }]} />
-          </View>
-          <View style={styles.heroActions}>
-            <Button label="开始今日任务" />
-            <Button label="查看规则" variant="secondary" />
-          </View>
+          <ProgressBar accessibilityLabel={`当前计划进度 ${progressPercent}%`} value={home.level.progressPercent} />
+          <Button label={home.recommendedTask.ctaLabel} />
         </Card>
 
         <View style={styles.metrics}>
-          <MetricCard badge="可配置" helper="不是现金，不可直接提现" label="虚拟成长金" value="12,800" />
-          <MetricCard helper="按活动规则领取" label="奖励罐" value="¥28.50" />
+          <MetricCard badge="学习资产" helper="仅用于模拟投资学习" label="虚拟成长金" value={virtualGrowthAmount} />
+          <MetricCard helper="满足活动规则后可申请领取" label="奖励罐" value={rewardJarAmount} />
         </View>
 
-        <DisclosureBanner
-          body="虚拟成长金只用于投资学习；奖励罐中的金额才可按活动规则申请提现。"
-          title="资金性质提醒"
-        />
-        <Card style={styles.accountPanel}>
+        <Card style={styles.taskPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">Mock 登录与绑卡</AppText>
+              <AppText variant="heading">今日推荐任务</AppText>
               <AppText color="textSecondary" variant="caption">
-                BGM-5 的移动端状态入口，后续接入真实登录和银行账户校验
+                预计 {home.recommendedTask.estimatedMinutes} 分钟
               </AppText>
             </View>
-            <Badge label="已验证" tone="success" />
+            <Badge label="推荐" tone="reward" />
           </View>
-          <View style={styles.accountRows}>
-            <View style={styles.accountRow}>
-              <AppText color="textSecondary" variant="label">
-                用户
+          <View style={styles.taskBody}>
+            <AppText variant="bodyStrong">{home.recommendedTask.title}</AppText>
+            <AppText color="textSecondary" variant="body">
+              {home.recommendedTask.description}
+            </AppText>
+            <View style={styles.rewardPill}>
+              <AppText color="reward" variant="label">
+                {home.recommendedTask.rewardLabel}
               </AppText>
-              <AppText variant="bodyStrong">{demoMockSession.user.displayName}</AppText>
             </View>
-            <View style={styles.accountRow}>
-              <AppText color="textSecondary" variant="label">
-                手机
+          </View>
+        </Card>
+
+        <DisclosureBanner body={demoTenant.disclosureCopy.virtualBalanceNotice} title="资金性质提醒" />
+
+        <Card style={styles.withdrawPanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="heading">提现窗口</AppText>
+              <AppText color="textSecondary" variant="caption">
+                {home.withdrawalWindow.label}
               </AppText>
-              <AppText variant="bodyStrong">{demoMockSession.user.phoneMasked}</AppText>
             </View>
-            <View style={styles.accountRow}>
+            <Badge label="未开放" />
+          </View>
+          <View style={styles.accountRow}>
+            <View style={styles.sectionCopy}>
               <AppText color="textSecondary" variant="label">
-                提现账户
+                绑定账户
               </AppText>
               <AppText variant="bodyStrong">{demoLinkedBankAccount.accountNumberMasked}</AppText>
             </View>
+            <Button label="管理" variant="secondary" />
           </View>
-          <Button label="管理绑定账户" variant="secondary" />
         </Card>
 
-        <Card style={styles.loopPanel}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionCopy}>
-              <AppText variant="heading">Product Loop</AppText>
-              <AppText color="textSecondary" variant="caption">
-                Earn, Allocate, Grow, Collect 的移动端基础组件样式
-              </AppText>
-            </View>
-            <Badge label="4 steps" />
-          </View>
-          <ProgressBar accessibilityLabel="当前产品闭环完成度 25%" value={0.25} />
-          {productLoopSteps.map((step) => (
-            <View key={step.id} style={styles.loopRow}>
-              <View style={styles.stepIndex}>
-                <AppText color="primary" variant="label">
-                  {step.label}
-                </AppText>
-              </View>
-              <View style={styles.stepCopy}>
-                <AppText variant="bodyStrong">{step.title}</AppText>
-                <AppText color="textSecondary" variant="caption">
-                  {step.id}
-                </AppText>
-              </View>
-            </View>
+        <View style={styles.quickActions}>
+          {home.nextActions.map((action) => (
+            <Button key={action.id} label={action.label} style={styles.quickActionButton} variant="secondary" />
           ))}
-        </Card>
+        </View>
       </Screen>
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  heroPanel: {
-    gap: spacing.lg
-  },
-  heroHeader: {
+  topBar: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.md,
+    gap: spacing.lg,
     justifyContent: "space-between"
   },
-  heroActions: {
-    gap: spacing.md
+  identityBlock: {
+    flex: 1,
+    gap: spacing.xs
+  },
+  todayPanel: {
+    gap: spacing.lg
   },
   metrics: {
     flexDirection: "row",
     gap: spacing.md
   },
-  themeSwatchRow: {
-    flexDirection: "row",
-    gap: spacing.sm
-  },
-  themeSwatch: {
-    borderColor: colors.light.border,
-    borderRadius: 999,
-    borderWidth: 1,
-    height: 28,
-    width: 28
-  },
-  loopPanel: {
+  taskPanel: {
     gap: spacing.lg
   },
-  accountPanel: {
-    gap: spacing.lg
-  },
-  accountRows: {
+  taskBody: {
     gap: spacing.md
+  },
+  rewardPill: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.light.rewardSoft,
+    borderRadius: 999,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  withdrawPanel: {
+    gap: spacing.lg
   },
   accountRow: {
     alignItems: "center",
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 12,
     flexDirection: "row",
-    gap: spacing.lg,
-    justifyContent: "space-between"
+    gap: spacing.md,
+    justifyContent: "space-between",
+    minHeight: 72,
+    padding: spacing.md
+  },
+  quickActions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md
+  },
+  quickActionButton: {
+    flexGrow: 1,
+    minWidth: 148
   },
   sectionHeader: {
     alignItems: "flex-start",
@@ -167,29 +172,7 @@ const styles = StyleSheet.create({
   },
   sectionCopy: {
     flex: 1,
-    gap: spacing.xs
-  },
-  loopRow: {
-    alignItems: "center",
-    backgroundColor: colors.light.surface,
-    borderWidth: 1,
-    borderColor: colors.light.border,
-    borderRadius: 12,
-    flexDirection: "row",
-    gap: spacing.md,
-    minHeight: 56,
-    padding: spacing.md
-  },
-  stepIndex: {
-    alignItems: "center",
-    backgroundColor: colors.light.surfaceMuted,
-    borderRadius: 12,
-    height: 44,
-    justifyContent: "center",
-    width: 44
-  },
-  stepCopy: {
-    flex: 1,
-    gap: spacing.xs
+    gap: spacing.xs,
+    minWidth: 0
   }
 });

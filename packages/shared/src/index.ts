@@ -53,6 +53,7 @@ export type ProductLoopStep = {
   label: string;
   title: string;
 };
+
 export type KycStatus = "not_started" | "mock_verified";
 
 export type BankAccountStatus = "not_linked" | "linked" | "verification_required";
@@ -80,6 +81,43 @@ export type LinkedBankAccount = {
   currency: "CNY";
   status: BankAccountStatus;
   isWithdrawalAccount: boolean;
+};
+
+export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
+
+export type TodayHomeSummary = {
+  userId: MockUserSession["user"]["id"];
+  tenantSlug: BankTenant["slug"];
+  level: {
+    label: string;
+    planName: string;
+    progressPercent: number;
+    remainingTaskCount: number;
+  };
+  balances: {
+    virtualGrowthAmount: number;
+    rewardJarAmount: number;
+    currency: "CNY";
+  };
+  recommendedTask: {
+    id: string;
+    type: TodayTaskType;
+    title: string;
+    description: string;
+    rewardLabel: string;
+    estimatedMinutes: number;
+    ctaLabel: string;
+  };
+  withdrawalWindow: {
+    label: string;
+    opensAt: string;
+    closesAt: string;
+    status: "upcoming" | "open" | "closed";
+  };
+  nextActions: Array<{
+    id: "portfolio" | "reward" | "learning";
+    label: string;
+  }>;
 };
 
 export const defaultTenantTheme: TenantTheme = {
@@ -135,6 +173,7 @@ export const productLoopSteps: ProductLoopStep[] = [
   { id: "grow", label: "03", title: "运行学习周期" },
   { id: "collect", label: "04", title: "领取活动奖励" }
 ];
+
 export const demoMockSession: MockUserSession = {
   user: {
     id: "mock-user-001",
@@ -158,4 +197,40 @@ export const demoLinkedBankAccount: LinkedBankAccount = {
   currency: "CNY",
   status: "linked",
   isWithdrawalAccount: true
+};
+
+export const demoTodayHomeSummary: TodayHomeSummary = {
+  userId: demoMockSession.user.id,
+  tenantSlug: demoTenant.slug,
+  level: {
+    label: "Level 2",
+    planName: "稳健成长计划",
+    progressPercent: 0.42,
+    remainingTaskCount: 2
+  },
+  balances: {
+    virtualGrowthAmount: 12800,
+    rewardJarAmount: 28.5,
+    currency: "CNY"
+  },
+  recommendedTask: {
+    id: "today-task-001",
+    type: "learning",
+    title: "完成 5 分钟风险分散小课",
+    description: "学习为什么模拟组合不该只押注一个行业，然后获得今日成长金。",
+    rewardLabel: "+300 成长金，+¥1.20 奖励罐",
+    estimatedMinutes: 5,
+    ctaLabel: "开始今日任务"
+  },
+  withdrawalWindow: {
+    label: "本月提现窗口：8 月 28 日至 8 月 31 日",
+    opensAt: "2026-08-28T00:00:00+08:00",
+    closesAt: "2026-08-31T23:59:59+08:00",
+    status: "upcoming"
+  },
+  nextActions: [
+    { id: "portfolio", label: "查看模拟组合" },
+    { id: "reward", label: "领取奖励" },
+    { id: "learning", label: "继续学习" }
+  ]
 };
