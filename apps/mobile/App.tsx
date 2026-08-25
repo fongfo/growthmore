@@ -1,6 +1,15 @@
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
-import { demoLinkedBankAccount, demoMockSession, demoTenant, demoTodayHomeSummary } from "@growthmore/shared";
+import {
+  demoLinkedBankAccount,
+  demoMockSession,
+  demoTaskBoardSummary,
+  demoTenant,
+  demoTodayHomeSummary,
+  demoUserTasks,
+  taskStatusCopy,
+  type TaskStatus
+} from "@growthmore/shared";
 import {
   AppText,
   Badge,
@@ -14,9 +23,23 @@ import {
 import { colors, spacing } from "./src/theme";
 
 const home = demoTodayHomeSummary;
+const taskBoard = demoTaskBoardSummary;
+const taskList = demoUserTasks.slice(0, 5);
 const progressPercent = Math.round(home.level.progressPercent * 100);
 const virtualGrowthAmount = home.balances.virtualGrowthAmount.toLocaleString("zh-CN");
 const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
+const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
+const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
+
+const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
+  available: "learning",
+  in_progress: "learning",
+  pending_verification: "reward",
+  completed: "success",
+  claimed: "success",
+  rejected: "danger",
+  reversed: "danger"
+};
 
 export default function App() {
   return (
@@ -55,26 +78,63 @@ export default function App() {
           <MetricCard helper="满足活动规则后可申请领取" label="奖励罐" value={rewardJarAmount} />
         </View>
 
-        <Card style={styles.taskPanel}>
+        <Card style={styles.taskBoardPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">今日推荐任务</AppText>
+              <AppText variant="heading">赚成长金</AppText>
               <AppText color="textSecondary" variant="caption">
-                预计 {home.recommendedTask.estimatedMinutes} 分钟
+                连续完成 {taskBoard.completionStreakDays} 天，今日可赚 {todayAvailableGrowthAmount} 成长金和 {todayAvailableRewardAmount}
               </AppText>
             </View>
-            <Badge label="推荐" tone="reward" />
+            <Badge label={`${taskBoard.totalTaskCount} 个任务`} tone="learning" />
           </View>
-          <View style={styles.taskBody}>
-            <AppText variant="bodyStrong">{home.recommendedTask.title}</AppText>
-            <AppText color="textSecondary" variant="body">
-              {home.recommendedTask.description}
-            </AppText>
-            <View style={styles.rewardPill}>
-              <AppText color="reward" variant="label">
-                {home.recommendedTask.rewardLabel}
-              </AppText>
-            </View>
+
+          <View style={styles.filterRow}>
+            {taskBoard.categoryFilters.map((filter) => (
+              <View key={filter.id} style={styles.filterChip}>
+                <AppText color="primary" variant="label">
+                  {filter.label}
+                </AppText>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.taskList}>
+            {taskList.map((task) => {
+              const statusCopy = taskStatusCopy[task.status];
+              const isPassiveState = task.status === "pending_verification" || task.status === "claimed" || task.status === "reversed";
+
+              return (
+                <View key={task.id} style={styles.taskRow}>
+                  <View style={styles.taskRowHeader}>
+                    <View style={styles.sectionCopy}>
+                      <AppText variant="bodyStrong">{task.title}</AppText>
+                      <AppText color="textSecondary" variant="caption">
+                        {task.description}
+                      </AppText>
+                    </View>
+                    <Badge label={statusCopy.label} tone={statusToneByStatus[task.status]} />
+                  </View>
+                  <View style={styles.taskMetaRow}>
+                    <AppText color="textSecondary" variant="caption">
+                      +{task.reward.virtualGrowthAmount} 成长金
+                      {task.reward.rewardJarAmount > 0 ? `，+¥${task.reward.rewardJarAmount.toFixed(2)} 奖励罐` : ""}
+                    </AppText>
+                    <AppText color="textSecondary" variant="caption">
+                      {task.estimatedMinutes} 分钟
+                    </AppText>
+                  </View>
+                  {task.rejectionReason ? (
+                    <View style={styles.rejectBox}>
+                      <AppText color="danger" variant="caption">
+                        {task.rejectionReason}
+                      </AppText>
+                    </View>
+                  ) : null}
+                  <Button disabled={isPassiveState} label={statusCopy.ctaLabel} variant={task.status === "completed" ? "primary" : "secondary"} />
+                </View>
+              );
+            })}
           </View>
         </Card>
 
@@ -100,12 +160,6 @@ export default function App() {
             <Button label="管理" variant="secondary" />
           </View>
         </Card>
-
-        <View style={styles.quickActions}>
-          {home.nextActions.map((action) => (
-            <Button key={action.id} label={action.label} style={styles.quickActionButton} variant="secondary" />
-          ))}
-        </View>
       </Screen>
     </>
   );
@@ -129,18 +183,49 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md
   },
-  taskPanel: {
+  taskBoardPanel: {
     gap: spacing.lg
   },
-  taskBody: {
-    gap: spacing.md
+  filterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
   },
-  rewardPill: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.light.rewardSoft,
+  filterChip: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderColor: colors.light.border,
     borderRadius: 999,
+    borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
+  },
+  taskList: {
+    gap: spacing.md
+  },
+  taskRow: {
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  taskRowHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  taskMetaRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  rejectBox: {
+    backgroundColor: colors.light.dangerSoft,
+    borderRadius: 8,
+    padding: spacing.md
   },
   withdrawPanel: {
     gap: spacing.lg
@@ -154,15 +239,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     minHeight: 72,
     padding: spacing.md
-  },
-  quickActions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.md
-  },
-  quickActionButton: {
-    flexGrow: 1,
-    minWidth: 148
   },
   sectionHeader: {
     alignItems: "flex-start",
