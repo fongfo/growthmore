@@ -138,6 +138,40 @@ export type TaskBoardSummary = {
     label: string;
   }>;
 };
+export type VirtualBalanceLedgerEntryType = "earn" | "allocate" | "release" | "freeze" | "clawback" | "adjust";
+
+export type VirtualBalanceLedgerSourceType = "task" | "simulation_allocation" | "risk_review" | "admin_adjustment";
+
+export type VirtualBalanceSnapshot = {
+  availableAmount: number;
+  allocatedAmount: number;
+  frozenAmount: number;
+  totalAmount: number;
+  currency: "CNY";
+  dailyEarnLimitAmount: number;
+  todayEarnedAmount: number;
+  expiresAt: string;
+  disclosure: string;
+};
+
+export type VirtualBalanceLedgerBalanceAfter = Pick<
+  VirtualBalanceSnapshot,
+  "availableAmount" | "allocatedAmount" | "frozenAmount" | "totalAmount"
+>;
+
+export type VirtualBalanceLedgerEntry = {
+  id: string;
+  userId: MockUserSession["user"]["id"];
+  entryType: VirtualBalanceLedgerEntryType;
+  amount: number;
+  currency: "CNY";
+  sourceType: VirtualBalanceLedgerSourceType;
+  sourceId: string;
+  balanceAfter: VirtualBalanceLedgerBalanceAfter;
+  ruleVersion: string;
+  description: string;
+  createdAt: string;
+};
 
 export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
 
@@ -470,6 +504,120 @@ export function createTaskBoardSummary(tasks: UserTask[]): TaskBoardSummary {
 }
 
 export const demoTaskBoardSummary = createTaskBoardSummary(demoUserTasks);
+export const demoVirtualBalanceLedger: VirtualBalanceLedgerEntry[] = [
+  {
+    id: "vbl-001",
+    userId: demoMockSession.user.id,
+    entryType: "earn",
+    amount: 1000,
+    currency: "CNY",
+    sourceType: "task",
+    sourceId: "profile-kyc-mock",
+    balanceAfter: { availableAmount: 1000, allocatedAmount: 0, frozenAmount: 0, totalAmount: 1000 },
+    ruleVersion: "demo-mvp-v1",
+    description: "完成资料补全 mock 获得成长金。",
+    createdAt: "2026-08-24T10:05:00+08:00"
+  },
+  {
+    id: "vbl-002",
+    userId: demoMockSession.user.id,
+    entryType: "earn",
+    amount: 500,
+    currency: "CNY",
+    sourceType: "task",
+    sourceId: "bank-account-linked",
+    balanceAfter: { availableAmount: 1500, allocatedAmount: 0, frozenAmount: 0, totalAmount: 1500 },
+    ruleVersion: "demo-mvp-v1",
+    description: "绑定提现账户 mock 获得成长金。",
+    createdAt: "2026-08-24T12:03:00+08:00"
+  },
+  {
+    id: "vbl-003",
+    userId: demoMockSession.user.id,
+    entryType: "adjust",
+    amount: 500,
+    currency: "CNY",
+    sourceType: "admin_adjustment",
+    sourceId: "opening-demo-bonus",
+    balanceAfter: { availableAmount: 2000, allocatedAmount: 0, frozenAmount: 0, totalAmount: 2000 },
+    ruleVersion: "demo-mvp-v1",
+    description: "Demo 开户活动成长金调整流水。",
+    createdAt: "2026-08-25T09:00:00+08:00"
+  },
+  {
+    id: "vbl-004",
+    userId: demoMockSession.user.id,
+    entryType: "allocate",
+    amount: 400,
+    currency: "CNY",
+    sourceType: "simulation_allocation",
+    sourceId: "allocation-001",
+    balanceAfter: { availableAmount: 1600, allocatedAmount: 400, frozenAmount: 0, totalAmount: 2000 },
+    ruleVersion: "demo-mvp-v1",
+    description: "配置成长金到稳健模拟组合。",
+    createdAt: "2026-08-25T10:15:00+08:00"
+  },
+  {
+    id: "vbl-005",
+    userId: demoMockSession.user.id,
+    entryType: "release",
+    amount: 150,
+    currency: "CNY",
+    sourceType: "simulation_allocation",
+    sourceId: "allocation-001",
+    balanceAfter: { availableAmount: 1750, allocatedAmount: 250, frozenAmount: 0, totalAmount: 2000 },
+    ruleVersion: "demo-mvp-v1",
+    description: "模拟组合释放未使用成长金。",
+    createdAt: "2026-08-25T11:30:00+08:00"
+  },
+  {
+    id: "vbl-006",
+    userId: demoMockSession.user.id,
+    entryType: "freeze",
+    amount: 200,
+    currency: "CNY",
+    sourceType: "risk_review",
+    sourceId: "review-001",
+    balanceAfter: { availableAmount: 1550, allocatedAmount: 250, frozenAmount: 200, totalAmount: 2000 },
+    ruleVersion: "demo-mvp-v1",
+    description: "异常频率触发复核，临时冻结部分成长金。",
+    createdAt: "2026-08-25T12:00:00+08:00"
+  },
+  {
+    id: "vbl-007",
+    userId: demoMockSession.user.id,
+    entryType: "clawback",
+    amount: 100,
+    currency: "CNY",
+    sourceType: "risk_review",
+    sourceId: "review-001",
+    balanceAfter: { availableAmount: 1550, allocatedAmount: 250, frozenAmount: 100, totalAmount: 1900 },
+    ruleVersion: "demo-mvp-v1",
+    description: "复核确认部分重复领取，扣回冻结成长金。",
+    createdAt: "2026-08-25T13:10:00+08:00"
+  }
+];
+
+export function createVirtualBalanceSnapshot(ledger: VirtualBalanceLedgerEntry[]): VirtualBalanceSnapshot {
+  const latestEntry = ledger.at(-1);
+  const todayEarnedAmount = ledger
+    .filter((entry) => entry.entryType === "earn" && entry.createdAt.startsWith("2026-08-25"))
+    .reduce((total, entry) => total + entry.amount, 0);
+
+  return {
+    availableAmount: latestEntry?.balanceAfter.availableAmount ?? 0,
+    allocatedAmount: latestEntry?.balanceAfter.allocatedAmount ?? 0,
+    frozenAmount: latestEntry?.balanceAfter.frozenAmount ?? 0,
+    totalAmount: latestEntry?.balanceAfter.totalAmount ?? 0,
+    currency: "CNY",
+    dailyEarnLimitAmount: 3000,
+    todayEarnedAmount,
+    expiresAt: "2026-12-31T23:59:59+08:00",
+    disclosure: demoTenant.disclosureCopy.virtualBalanceNotice
+  };
+}
+
+export const demoVirtualBalance = createVirtualBalanceSnapshot(demoVirtualBalanceLedger);
 
 export const demoTodayHomeSummary: TodayHomeSummary = {
   userId: demoMockSession.user.id,
@@ -481,7 +629,7 @@ export const demoTodayHomeSummary: TodayHomeSummary = {
     remainingTaskCount: 2
   },
   balances: {
-    virtualGrowthAmount: 12800,
+    virtualGrowthAmount: demoVirtualBalance.availableAmount,
     rewardJarAmount: 28.5,
     currency: "CNY"
   },

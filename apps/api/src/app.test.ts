@@ -102,7 +102,7 @@ describe("app home", () => {
         remainingTaskCount: 2
       },
       balances: {
-        virtualGrowthAmount: 12800,
+        virtualGrowthAmount: 1550,
         rewardJarAmount: 28.5,
         currency: "CNY"
       },
@@ -120,6 +120,44 @@ describe("app home", () => {
   });
 });
 
+
+describe("virtual balance", () => {
+  it("returns the ledger-derived virtual balance snapshot", async () => {
+    const response = await request(createApp()).get("/api/virtual-balance");
+
+    expect(response.status).toBe(200);
+    expect(response.body.balance).toMatchObject({
+      availableAmount: 1550,
+      allocatedAmount: 250,
+      frozenAmount: 100,
+      totalAmount: 1900,
+      currency: "CNY",
+      dailyEarnLimitAmount: 3000,
+      todayEarnedAmount: 0
+    });
+    expect(response.body.balance.disclosure).toContain("不是现金");
+  });
+
+  it("returns the auditable virtual balance ledger", async () => {
+    const response = await request(createApp()).get("/api/virtual-balance/ledger");
+
+    expect(response.status).toBe(200);
+    expect(response.body.ledger).toHaveLength(7);
+    expect(response.body.ledger[0]).toMatchObject({
+      entryType: "earn",
+      amount: 1000,
+      sourceType: "task",
+      sourceId: "profile-kyc-mock",
+      ruleVersion: "demo-mvp-v1"
+    });
+    expect(response.body.ledger.at(-1).balanceAfter).toMatchObject({
+      availableAmount: 1550,
+      allocatedAmount: 250,
+      frozenAmount: 100,
+      totalAmount: 1900
+    });
+  });
+});
 describe("task system", () => {
   it("returns the task board summary and task list", async () => {
     const response = await request(createApp()).get("/api/tasks");

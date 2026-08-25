@@ -3,6 +3,7 @@ import {
   applyTaskAction,
   canTransitionTask,
   createTaskBoardSummary,
+  createVirtualBalanceSnapshot,
   defaultTenantTheme,
   demoLinkedBankAccount,
   demoMockSession,
@@ -10,6 +11,8 @@ import {
   demoTenant,
   demoTodayHomeSummary,
   demoUserTasks,
+  demoVirtualBalance,
+  demoVirtualBalanceLedger,
   getAvailableTaskActions,
   getNextTaskStatus,
   productLoopSteps,
@@ -130,5 +133,42 @@ describe("task state machine", () => {
     });
     expect(summary.todayAvailableVirtualGrowthAmount).toBeGreaterThan(0);
     expect(summary.categoryFilters.map((filter) => filter.id)).toContain("banking");
+  });
+});
+
+describe("virtual balance ledger", () => {
+  it("derives the virtual balance snapshot from the latest ledger entry", () => {
+    const snapshot = createVirtualBalanceSnapshot(demoVirtualBalanceLedger);
+    const latestEntry = demoVirtualBalanceLedger.at(-1);
+
+    expect(snapshot).toEqual(demoVirtualBalance);
+    expect(latestEntry).toBeDefined();
+    expect(snapshot.availableAmount).toBe(latestEntry!.balanceAfter.availableAmount);
+    expect(snapshot.allocatedAmount).toBe(latestEntry!.balanceAfter.allocatedAmount);
+    expect(snapshot.frozenAmount).toBe(latestEntry!.balanceAfter.frozenAmount);
+    expect(snapshot.totalAmount).toBe(latestEntry!.balanceAfter.totalAmount);
+  });
+
+  it("keeps all required audit fields on every ledger entry", () => {
+    expect(demoVirtualBalanceLedger).toHaveLength(7);
+
+    for (const entry of demoVirtualBalanceLedger) {
+      expect(entry.entryType).toBeTruthy();
+      expect(entry.amount).toBeGreaterThan(0);
+      expect(entry.sourceType).toBeTruthy();
+      expect(entry.sourceId).toBeTruthy();
+      expect(entry.balanceAfter.totalAmount).toBe(
+        entry.balanceAfter.availableAmount + entry.balanceAfter.allocatedAmount + entry.balanceAfter.frozenAmount
+      );
+      expect(entry.ruleVersion).toBe("demo-mvp-v1");
+      expect(entry.createdAt).toContain("+08:00");
+    }
+  });
+
+  it("keeps virtual balance separate from cash reward language", () => {
+    expect(demoVirtualBalance.disclosure).toContain("不是现金");
+    expect(demoVirtualBalance.availableAmount).toBe(demoTodayHomeSummary.balances.virtualGrowthAmount);
+    expect(demoVirtualBalance.todayEarnedAmount).toBe(0);
+    expect(demoVirtualBalance.dailyEarnLimitAmount).toBeGreaterThan(demoVirtualBalance.todayEarnedAmount);
   });
 });
