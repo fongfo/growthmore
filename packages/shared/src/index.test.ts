@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { defaultTenantTheme, demoTenant, productLoopSteps } from "./index";
+import {
+  defaultTenantTheme,
+  demoLinkedBankAccount,
+  demoMockSession,
+  demoTenant,
+  productLoopSteps
+} from "./index";
 
 describe("shared project constants", () => {
   it("exposes the demo tenant and product loop", () => {
@@ -26,5 +32,12 @@ describe("shared project constants", () => {
     expect(demoTenant.disclosureCopy.rewardNotice).toContain("银行活动预算");
     expect(demoTenant.disclosureCopy.simulationNotice).toContain("不代表真实投资收益");
   });
+  it("provides a mock verified user session and linked bank account", () => {
+    expect(demoMockSession.user.tenantSlug).toBe(demoTenant.slug);
+    expect(demoMockSession.user.kycStatus).toBe("mock_verified");
+    expect(demoMockSession.auth.tokenType).toBe("Bearer");
+    expect(demoLinkedBankAccount.status).toBe("linked");
+    expect(demoLinkedBankAccount.isWithdrawalAccount).toBe(true);
+    expect(demoLinkedBankAccount.accountNumberMasked).toContain("****");
+  });
 });
-

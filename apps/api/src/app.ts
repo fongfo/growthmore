@@ -2,7 +2,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
-import { demoTenant } from "@growthmore/shared";
+import { demoLinkedBankAccount, demoMockSession, demoTenant } from "@growthmore/shared";
 
 export function createApp() {
   const app = express();
@@ -25,7 +25,23 @@ export function createApp() {
       tenant: demoTenant
     });
   });
+  app.post("/api/auth/mock-login", (_request, response) => {
+    response.status(201).json({
+      session: demoMockSession
+    });
+  });
+
+  app.get("/api/auth/session", (_request, response) => {
+    response.json({
+      session: demoMockSession
+    });
+  });
+
+  app.get("/api/bank-accounts/current", (_request, response) => {
+    response.json({
+      account: demoLinkedBankAccount
+    });
+  });
 
   return app;
 }
-
