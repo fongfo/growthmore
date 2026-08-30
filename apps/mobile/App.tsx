@@ -1,8 +1,12 @@
+import { useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
 import {
   demoLinkedBankAccount,
   demoMockSession,
+  createSimulationAllocationDraft,
+  demoSimulationAllocationDraft,
+  demoSimulationProducts,
   demoTaskBoardSummary,
   demoTenant,
   demoTodayHomeSummary,
@@ -10,6 +14,7 @@ import {
   demoVirtualBalance,
   demoVirtualBalanceLedger,
   taskStatusCopy,
+  type SimulationAllocation,
   type TaskStatus
 } from "@growthmore/shared";
 import {
@@ -45,6 +50,26 @@ const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" 
 };
 
 export default function App() {
+  const [allocationDraft, setAllocationDraft] = useState(demoSimulationAllocationDraft);
+
+  const handleApplyExample = (exampleId: string) => {
+    const example = allocationDraft.examples.find((item) => item.id === exampleId);
+
+    if (example) {
+      setAllocationDraft(createSimulationAllocationDraft(demoVirtualBalance.availableAmount, example.allocations));
+    }
+  };
+
+  const handleResetAllocation = () => {
+    setAllocationDraft(createSimulationAllocationDraft(demoVirtualBalance.availableAmount, []));
+  };
+
+  const getAllocationForProduct = (productId: string): SimulationAllocation =>
+    allocationDraft.allocations.find((allocation) => allocation.productId === productId) ?? {
+      productId,
+      amount: 0,
+      percent: 0
+    };
   return (
     <>
       <StatusBar style="dark" />
@@ -121,6 +146,69 @@ export default function App() {
           </View>
         </Card>
 
+
+        <Card style={styles.allocationPanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="heading">模拟配置</AppText>
+              <AppText color="textSecondary" variant="caption">
+                未配置 {allocationDraft.unallocatedAmount.toLocaleString("zh-CN")} 成长金，只用于投资学习
+              </AppText>
+            </View>
+            <Badge label={allocationDraft.riskLabel} tone="learning" />
+          </View>
+
+          <View style={styles.riskTrack} accessibilityLabel={`组合风险分 ${allocationDraft.riskScore}`}>
+            <View style={[styles.riskFill, { width: `${Math.min(allocationDraft.riskScore * 25, 100)}%` }]} />
+          </View>
+
+          <View style={styles.exampleRow}>
+            {allocationDraft.examples.map((example) => (
+              <Button key={example.id} label={example.label} onPress={() => handleApplyExample(example.id)} style={styles.exampleButton} variant="secondary" />
+            ))}
+          </View>
+          <Button label="重置配置" onPress={handleResetAllocation} variant="ghost" />
+
+          <View style={styles.productList}>
+            {demoSimulationProducts.map((product) => {
+              const allocation = getAllocationForProduct(product.id);
+
+              return (
+                <View key={product.id} style={styles.productConfigCard}>
+                  <View style={styles.taskRowHeader}>
+                    <View style={styles.sectionCopy}>
+                      <AppText variant="bodyStrong">{product.name}</AppText>
+                      <AppText color="textSecondary" variant="caption">
+                        {product.userLabel} · {product.volatilityLabel} · {product.learningGoal}
+                      </AppText>
+                    </View>
+                    <Badge label={product.riskLabel} tone={product.riskLevel === "medium_high" ? "danger" : "learning"} />
+                  </View>
+                  <View style={styles.allocationTrack}>
+                    <View style={[styles.allocationFill, { width: `${allocation.percent}%` }]} />
+                  </View>
+                  <View style={styles.taskMetaRow}>
+                    <AppText color="textSecondary" variant="caption">
+                      配置 {allocation.amount.toLocaleString("zh-CN")} 成长金
+                    </AppText>
+                    <AppText color="textSecondary" variant="caption">
+                      {allocation.percent}%
+                    </AppText>
+                  </View>
+                  <AppText color="textSecondary" variant="caption">
+                    {product.simulationLogic}
+                  </AppText>
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.riskConfirmBox}>
+            <AppText color="textSecondary" variant="caption">
+              我知道这是模拟学习；高波动产品可能上涨也可能下跌；真实投资需要完成银行风险测评。
+            </AppText>
+          </View>
+        </Card>
         <Card style={styles.taskBoardPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -252,6 +340,56 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
+    padding: spacing.md
+  },
+  allocationPanel: {
+    gap: spacing.lg
+  },
+  riskTrack: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 999,
+    height: 10,
+    overflow: "hidden"
+  },
+  riskFill: {
+    backgroundColor: colors.light.learning,
+    borderRadius: 999,
+    height: 10
+  },
+  exampleRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.md
+  },
+  exampleButton: {
+    flexGrow: 1,
+    minWidth: 104
+  },
+  productList: {
+    gap: spacing.md
+  },
+  productConfigCard: {
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  allocationTrack: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 999,
+    height: 8,
+    overflow: "hidden"
+  },
+  allocationFill: {
+    backgroundColor: colors.light.success,
+    borderRadius: 999,
+    height: 8
+  },
+  riskConfirmBox: {
+    backgroundColor: colors.light.learningSoft,
+    borderRadius: 12,
     padding: spacing.md
   },
   taskBoardPanel: {

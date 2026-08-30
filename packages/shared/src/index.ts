@@ -172,6 +172,44 @@ export type VirtualBalanceLedgerEntry = {
   description: string;
   createdAt: string;
 };
+export type SimulationRiskLevel = "low" | "medium_low" | "medium" | "medium_high";
+
+export type SimulationProduct = {
+  id: string;
+  name: string;
+  userLabel: string;
+  riskLevel: SimulationRiskLevel;
+  riskLabel: string;
+  volatilityLabel: string;
+  learningGoal: string;
+  simulationLogic: string;
+  riskDisclosure: string;
+};
+
+export type SimulationAllocation = {
+  productId: SimulationProduct["id"];
+  amount: number;
+  percent: number;
+};
+
+export type SimulationAllocationExample = {
+  id: "conservative" | "balanced" | "growth";
+  label: string;
+  description: string;
+  allocations: Array<Pick<SimulationAllocation, "productId" | "amount">>;
+};
+
+export type SimulationAllocationDraft = {
+  userId: MockUserSession["user"]["id"];
+  availableAmount: number;
+  totalAllocatedAmount: number;
+  unallocatedAmount: number;
+  riskScore: number;
+  riskLabel: string;
+  riskDisclosure: string;
+  allocations: SimulationAllocation[];
+  examples: SimulationAllocationExample[];
+};
 
 export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
 
@@ -619,6 +657,185 @@ export function createVirtualBalanceSnapshot(ledger: VirtualBalanceLedgerEntry[]
 
 export const demoVirtualBalance = createVirtualBalanceSnapshot(demoVirtualBalanceLedger);
 
+
+export const demoSimulationProducts: SimulationProduct[] = [
+  {
+    id: "term-deposit",
+    name: "模拟定存",
+    userLabel: "稳健",
+    riskLevel: "low",
+    riskLabel: "低风险",
+    volatilityLabel: "极低波动",
+    learningGoal: "理解固定收益和期限",
+    simulationLogic: "学习周期内按固定节奏展示小幅变化，帮助理解期限和稳定性。",
+    riskDisclosure: "模拟定存只用于教育演示，不代表真实存款产品或利率承诺。"
+  },
+  {
+    id: "money-market",
+    name: "模拟货币基金",
+    userLabel: "灵活",
+    riskLevel: "low",
+    riskLabel: "低风险",
+    volatilityLabel: "低波动",
+    learningGoal: "理解流动性",
+    simulationLogic: "学习周期内展示轻微上下波动，突出灵活性和低波动特征。",
+    riskDisclosure: "模拟货币基金不代表真实基金收益，真实产品需完成银行风险测评。"
+  },
+  {
+    id: "bond",
+    name: "模拟债券",
+    userLabel: "票息",
+    riskLevel: "medium_low",
+    riskLabel: "中低风险",
+    volatilityLabel: "低到中波动",
+    learningGoal: "理解利率和票息",
+    simulationLogic: "用票息和利率变化解释债券价格为什么会有小幅波动。",
+    riskDisclosure: "模拟债券可能上涨也可能下跌，不构成真实投资建议。"
+  },
+  {
+    id: "gold",
+    name: "模拟黄金",
+    userLabel: "避险资产",
+    riskLevel: "medium_high",
+    riskLabel: "中高风险",
+    volatilityLabel: "中高波动",
+    learningGoal: "理解商品波动",
+    simulationLogic: "通过更明显的涨跌展示商品资产受市场情绪影响的特点。",
+    riskDisclosure: "高波动模拟资产可能上涨也可能下跌，真实投资需谨慎。"
+  },
+  {
+    id: "balanced-fund",
+    name: "模拟平衡基金",
+    userLabel: "成长组合",
+    riskLevel: "medium",
+    riskLabel: "中风险",
+    volatilityLabel: "中波动",
+    learningGoal: "理解分散配置",
+    simulationLogic: "组合展示股债等资产分散后的中等波动，帮助理解配置。",
+    riskDisclosure: "模拟平衡基金只用于学习资产配置，不代表真实基金推荐。"
+  }
+];
+
+export const demoSimulationAllocationExamples: SimulationAllocationExample[] = [
+  {
+    id: "conservative",
+    label: "稳健示例",
+    description: "以低波动资产为主，用于理解本金稳定和流动性。",
+    allocations: [
+      { productId: "term-deposit", amount: 550 },
+      { productId: "money-market", amount: 500 },
+      { productId: "bond", amount: 300 },
+      { productId: "gold", amount: 50 },
+      { productId: "balanced-fund", amount: 150 }
+    ]
+  },
+  {
+    id: "balanced",
+    label: "均衡示例",
+    description: "把成长金分散到多类资产，观察不同资产一起变化。",
+    allocations: [
+      { productId: "term-deposit", amount: 300 },
+      { productId: "money-market", amount: 300 },
+      { productId: "bond", amount: 350 },
+      { productId: "gold", amount: 200 },
+      { productId: "balanced-fund", amount: 400 }
+    ]
+  },
+  {
+    id: "growth",
+    label: "进取示例",
+    description: "增加中高波动资产占比，用于学习波动和风险确认。",
+    allocations: [
+      { productId: "term-deposit", amount: 150 },
+      { productId: "money-market", amount: 150 },
+      { productId: "bond", amount: 250 },
+      { productId: "gold", amount: 450 },
+      { productId: "balanced-fund", amount: 550 }
+    ]
+  }
+];
+
+const demoDefaultSimulationAllocationAmounts: Array<Pick<SimulationAllocation, "productId" | "amount">> = [
+  { productId: "term-deposit", amount: 250 },
+  { productId: "money-market", amount: 300 },
+  { productId: "bond", amount: 300 },
+  { productId: "gold", amount: 150 },
+  { productId: "balanced-fund", amount: 250 }
+];
+
+const riskScoreByLevel: Record<SimulationRiskLevel, number> = {
+  low: 1,
+  medium_low: 2,
+  medium: 3,
+  medium_high: 4
+};
+
+function getSimulationRiskLabel(score: number): string {
+  if (score < 1.8) {
+    return "低波动学习组合";
+  }
+  if (score < 2.6) {
+    return "稳健均衡学习组合";
+  }
+  if (score < 3.2) {
+    return "中等波动学习组合";
+  }
+  return "高波动学习组合";
+}
+
+export function createSimulationAllocationDraft(
+  availableAmount: number,
+  allocationAmounts: Array<Pick<SimulationAllocation, "productId" | "amount">> = demoDefaultSimulationAllocationAmounts
+): SimulationAllocationDraft {
+  const totalAllocatedAmount = allocationAmounts.reduce((total, allocation) => total + allocation.amount, 0);
+  const allocations = allocationAmounts.map((allocation) => ({
+    ...allocation,
+    percent: totalAllocatedAmount > 0 ? Math.round((allocation.amount / totalAllocatedAmount) * 100) : 0
+  }));
+  const weightedRisk = allocations.reduce((total, allocation) => {
+    const product = demoSimulationProducts.find((item) => item.id === allocation.productId);
+    return total + (product ? riskScoreByLevel[product.riskLevel] * allocation.amount : 0);
+  }, 0);
+  const riskScore = totalAllocatedAmount > 0 ? Number((weightedRisk / totalAllocatedAmount).toFixed(2)) : 0;
+
+  return {
+    userId: demoMockSession.user.id,
+    availableAmount,
+    totalAllocatedAmount,
+    unallocatedAmount: availableAmount - totalAllocatedAmount,
+    riskScore,
+    riskLabel: getSimulationRiskLabel(riskScore),
+    riskDisclosure: demoTenant.disclosureCopy.simulationNotice,
+    allocations,
+    examples: demoSimulationAllocationExamples
+  };
+}
+
+export function validateSimulationAllocations(
+  availableAmount: number,
+  allocationAmounts: Array<Pick<SimulationAllocation, "productId" | "amount">>
+): string[] {
+  const errors: string[] = [];
+  const productIds = new Set(demoSimulationProducts.map((product) => product.id));
+  const total = allocationAmounts.reduce((sum, allocation) => sum + allocation.amount, 0);
+
+  for (const allocation of allocationAmounts) {
+    if (!productIds.has(allocation.productId)) {
+      errors.push(`Unknown simulation product: ${allocation.productId}`);
+    }
+    if (!Number.isFinite(allocation.amount) || allocation.amount < 0) {
+      errors.push(`Invalid allocation amount for ${allocation.productId}`);
+    }
+  }
+
+  if (total > availableAmount) {
+    errors.push("Allocated amount cannot exceed available virtual growth balance.");
+  }
+
+  return errors;
+}
+
+export const demoSimulationAllocationDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount);
 export const demoTodayHomeSummary: TodayHomeSummary = {
   userId: demoMockSession.user.id,
   tenantSlug: demoTenant.slug,

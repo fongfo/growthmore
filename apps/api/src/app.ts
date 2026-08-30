@@ -6,12 +6,17 @@ import {
   applyTaskAction,
   demoLinkedBankAccount,
   demoMockSession,
+  createSimulationAllocationDraft,
+  demoSimulationAllocationDraft,
+  demoSimulationProducts,
   demoTaskBoardSummary,
   demoTenant,
   demoTodayHomeSummary,
   demoUserTasks,
   demoVirtualBalance,
   demoVirtualBalanceLedger,
+  validateSimulationAllocations,
+  type SimulationAllocation,
   type TaskAction,
   type UserTask
 } from "@growthmore/shared";
@@ -89,6 +94,37 @@ export function createApp() {
   app.get("/api/virtual-balance/ledger", (_request, response) => {
     response.json({
       ledger: demoVirtualBalanceLedger
+    });
+  });
+
+  app.get("/api/simulation/products", (_request, response) => {
+    response.json({
+      products: demoSimulationProducts
+    });
+  });
+
+  app.get("/api/simulation/allocations", (_request, response) => {
+    response.json({
+      allocationDraft: demoSimulationAllocationDraft
+    });
+  });
+
+  app.put("/api/simulation/allocations", (request, response) => {
+    const allocations = Array.isArray(request.body?.allocations)
+      ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
+      : [];
+    const errors = validateSimulationAllocations(demoVirtualBalance.availableAmount, allocations);
+
+    if (errors.length > 0) {
+      response.status(400).json({
+        error: "invalid_simulation_allocations",
+        messages: errors
+      });
+      return;
+    }
+
+    response.json({
+      allocationDraft: createSimulationAllocationDraft(demoVirtualBalance.availableAmount, allocations)
     });
   });
 
