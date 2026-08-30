@@ -158,6 +158,69 @@ describe("virtual balance", () => {
     });
   });
 });
+
+describe("simulation products and allocations", () => {
+  it("returns the MVP simulation product pool", async () => {
+    const response = await request(createApp()).get("/api/simulation/products");
+
+    expect(response.status).toBe(200);
+    expect(response.body.products).toHaveLength(5);
+    expect(response.body.products.map((product: { name: string }) => product.name)).toContain("模拟黄金");
+    expect(response.body.products[0]).toMatchObject({
+      id: "term-deposit",
+      riskLabel: "低风险",
+      learningGoal: "理解固定收益和期限"
+    });
+  });
+
+  it("returns the current allocation draft", async () => {
+    const response = await request(createApp()).get("/api/simulation/allocations");
+
+    expect(response.status).toBe(200);
+    expect(response.body.allocationDraft).toMatchObject({
+      availableAmount: 1550,
+      totalAllocatedAmount: 1250,
+      unallocatedAmount: 300,
+      riskLabel: "稳健均衡学习组合"
+    });
+    expect(response.body.allocationDraft.allocations).toHaveLength(5);
+    expect(response.body.allocationDraft.examples).toHaveLength(3);
+  });
+
+  it("saves a valid allocation draft", async () => {
+    const response = await request(createApp()).put("/api/simulation/allocations").send({
+      allocations: [
+        { productId: "term-deposit", amount: 500 },
+        { productId: "money-market", amount: 400 },
+        { productId: "bond", amount: 300 }
+      ]
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.allocationDraft).toMatchObject({
+      totalAllocatedAmount: 1200,
+      unallocatedAmount: 350
+    });
+    expect(response.body.allocationDraft.allocations.map((allocation: { percent: number }) => allocation.percent)).toEqual([
+      42,
+      33,
+      25
+    ]);
+  });
+
+  it("rejects invalid allocations", async () => {
+    const response = await request(createApp()).put("/api/simulation/allocations").send({
+      allocations: [
+        { productId: "missing-product", amount: 2000 }
+      ]
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("invalid_simulation_allocations");
+    expect(response.body.messages).toContain("Unknown simulation product: missing-product");
+    expect(response.body.messages).toContain("Allocated amount cannot exceed available virtual growth balance.");
+  });
+});
 describe("task system", () => {
   it("returns the task board summary and task list", async () => {
     const response = await request(createApp()).get("/api/tasks");

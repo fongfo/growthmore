@@ -3,10 +3,13 @@ import {
   applyTaskAction,
   canTransitionTask,
   createTaskBoardSummary,
+  createSimulationAllocationDraft,
   createVirtualBalanceSnapshot,
   defaultTenantTheme,
   demoLinkedBankAccount,
   demoMockSession,
+  demoSimulationAllocationDraft,
+  demoSimulationProducts,
   demoTaskBoardSummary,
   demoTenant,
   demoTodayHomeSummary,
@@ -17,7 +20,8 @@ import {
   getNextTaskStatus,
   productLoopSteps,
   taskStatusCopy,
-  transitionTaskStatus
+  transitionTaskStatus,
+  validateSimulationAllocations
 } from "./index";
 
 describe("shared project constants", () => {
@@ -170,5 +174,57 @@ describe("virtual balance ledger", () => {
     expect(demoVirtualBalance.availableAmount).toBe(demoTodayHomeSummary.balances.virtualGrowthAmount);
     expect(demoVirtualBalance.todayEarnedAmount).toBe(0);
     expect(demoVirtualBalance.dailyEarnLimitAmount).toBeGreaterThan(demoVirtualBalance.todayEarnedAmount);
+  });
+});
+
+describe("simulation products and allocations", () => {
+  it("provides the five MVP simulation products with risk education copy", () => {
+    expect(demoSimulationProducts.map((product) => product.name)).toEqual([
+      "模拟定存",
+      "模拟货币基金",
+      "模拟债券",
+      "模拟黄金",
+      "模拟平衡基金"
+    ]);
+    expect(demoSimulationProducts.every((product) => product.riskLabel && product.simulationLogic)).toBe(true);
+    expect(demoSimulationProducts.find((product) => product.id === "gold")?.riskDisclosure).toContain("高波动");
+  });
+
+  it("creates an allocation draft with unallocated balance and percentages", () => {
+    expect(demoSimulationAllocationDraft.availableAmount).toBe(demoVirtualBalance.availableAmount);
+    expect(demoSimulationAllocationDraft.totalAllocatedAmount).toBe(1250);
+    expect(demoSimulationAllocationDraft.unallocatedAmount).toBe(300);
+    expect(demoSimulationAllocationDraft.allocations.reduce((sum, allocation) => sum + allocation.percent, 0)).toBe(100);
+    expect(demoSimulationAllocationDraft.riskDisclosure).toContain("不代表真实投资收益");
+    expect(demoSimulationAllocationDraft.examples.map((example) => example.id)).toEqual([
+      "conservative",
+      "balanced",
+      "growth"
+    ]);
+  });
+
+  it("supports educational examples and reset allocations", () => {
+    const growthExample = demoSimulationAllocationDraft.examples.find((example) => example.id === "growth");
+    const growthDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount, growthExample!.allocations);
+    const resetDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount, []);
+
+    expect(growthDraft.totalAllocatedAmount).toBe(demoVirtualBalance.availableAmount);
+    expect(growthDraft.riskScore).toBeGreaterThan(demoSimulationAllocationDraft.riskScore);
+    expect(resetDraft.totalAllocatedAmount).toBe(0);
+    expect(resetDraft.unallocatedAmount).toBe(demoVirtualBalance.availableAmount);
+  });
+
+  it("validates unknown, negative, and over-budget allocations", () => {
+    expect(validateSimulationAllocations(demoVirtualBalance.availableAmount, [
+      { productId: "gold", amount: 100 },
+      { productId: "missing-product", amount: 50 },
+      { productId: "bond", amount: -1 }
+    ])).toEqual([
+      "Unknown simulation product: missing-product",
+      "Invalid allocation amount for bond"
+    ]);
+    expect(validateSimulationAllocations(demoVirtualBalance.availableAmount, [
+      { productId: "gold", amount: demoVirtualBalance.availableAmount + 1 }
+    ])).toContain("Allocated amount cannot exceed available virtual growth balance.");
   });
 });
