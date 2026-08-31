@@ -221,6 +221,88 @@ describe("simulation products and allocations", () => {
     expect(response.body.messages).toContain("Allocated amount cannot exceed available virtual growth balance.");
   });
 });
+describe("simulation learning cycle and reflection", () => {
+  it("returns the current learning cycle run", async () => {
+    const response = await request(createApp()).get("/api/simulation/runs/current");
+
+    expect(response.status).toBe(200);
+    expect(response.body.run).toMatchObject({
+      id: "simulation-run-2026-08-w4",
+      cycleLabel: "2026 年 8 月第 4 周学习周期",
+      startingVirtualAmount: 1250,
+      rewardActivityAmount: 1.8,
+      riskConfirmationRequired: true
+    });
+    expect(response.body.run.disclosure).toContain("不进入真实奖励计算");
+    expect(response.body.run.productResults).toHaveLength(5);
+    expect(response.body.run.reflectionQuestions).toHaveLength(3);
+  });
+
+  it("runs a learning cycle for submitted allocations", async () => {
+    const response = await request(createApp()).post("/api/simulation/run").send({
+      allocations: [
+        { productId: "term-deposit", amount: 400 },
+        { productId: "money-market", amount: 300 }
+      ]
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.run).toMatchObject({
+      startingVirtualAmount: 700,
+      riskConfirmationRequired: false,
+      rewardActivityAmount: 1.8
+    });
+    expect(response.body.run.productResults).toHaveLength(2);
+  });
+
+  it("rejects invalid allocations before running a cycle", async () => {
+    const response = await request(createApp()).post("/api/simulation/run").send({
+      allocations: [{ productId: "missing-product", amount: 50 }]
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("invalid_simulation_allocations");
+  });
+
+  it("requires reflection answers and high-volatility confirmation", async () => {
+    const response = await request(createApp()).post("/api/simulation/runs/simulation-run-2026-08-w4/reflection").send({
+      answers: [{ questionId: "highest-volatility", answer: "模拟黄金" }],
+      riskConfirmationAccepted: false
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("incomplete_simulation_reflection");
+    expect(response.body.reflection.messages).toContain("Risk confirmation is required for high-volatility simulation products.");
+  });
+
+  it("accepts a complete reflection submission", async () => {
+    const response = await request(createApp()).post("/api/simulation/runs/simulation-run-2026-08-w4/reflection").send({
+      answers: [
+        { questionId: "highest-volatility", answer: "模拟黄金" },
+        { questionId: "allocation-lesson", answer: "分散配置能降低单一资产波动影响" },
+        { questionId: "reward-boundary", answer: "奖励来自银行活动预算，不来自模拟涨跌" }
+      ],
+      riskConfirmationAccepted: true
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.reflection).toMatchObject({
+      completed: true,
+      learningCompletionCoefficient: 1,
+      acceptedRiskConfirmation: true
+    });
+  });
+
+  it("returns 404 for unknown simulation runs", async () => {
+    const response = await request(createApp()).post("/api/simulation/runs/missing-run/reflection").send({
+      answers: [],
+      riskConfirmationAccepted: true
+    });
+
+    expect(response.status).toBe(404);
+    expect(response.body.error).toBe("simulation_run_not_found");
+  });
+});
 describe("task system", () => {
   it("returns the task board summary and task list", async () => {
     const response = await request(createApp()).get("/api/tasks");
