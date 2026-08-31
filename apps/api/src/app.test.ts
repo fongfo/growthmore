@@ -103,7 +103,7 @@ describe("app home", () => {
       },
       balances: {
         virtualGrowthAmount: 1550,
-        rewardJarAmount: 28.5,
+        rewardJarAmount: 11.5,
         currency: "CNY"
       },
       recommendedTask: {
@@ -301,6 +301,39 @@ describe("simulation learning cycle and reflection", () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe("simulation_run_not_found");
+  });
+});
+describe("reward jar and ledger", () => {
+  it("returns the reward jar summary", async () => {
+    const response = await request(createApp()).get("/api/rewards/jar");
+
+    expect(response.status).toBe(200);
+    expect(response.body.rewardJar).toMatchObject({
+      currency: "CNY",
+      totalBalanceAmount: 11.5,
+      availableAmount: 3.7,
+      lockedAmount: 6,
+      pendingAmount: 1.8,
+      minimumWithdrawalAmount: 5
+    });
+    expect(response.body.rewardJar.rewardRuleSummary).toContain("模拟投资涨跌不会进入奖励计算");
+    expect(response.body.rewardJar.ledger).toHaveLength(5);
+  });
+
+  it("returns reward history with source and budget audit fields", async () => {
+    const response = await request(createApp()).get("/api/rewards/history");
+
+    expect(response.status).toBe(200);
+    expect(response.body.ledger).toHaveLength(5);
+    expect(response.body.ledger[0]).toMatchObject({
+      id: "rwd-001",
+      status: "available",
+      sourceType: "task",
+      sourceId: "risk-lesson",
+      budgetBatchId: "budget-2026-08-learning",
+      activityRuleVersion: "reward-demo-v1"
+    });
+    expect(response.body.ledger.map((entry: { status: string }) => entry.status)).toContain("locked");
   });
 });
 describe("task system", () => {

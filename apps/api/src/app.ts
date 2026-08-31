@@ -7,6 +7,8 @@ import {
   createSimulationCycleRun,
   demoLinkedBankAccount,
   demoMockSession,
+  demoRewardJar,
+  demoRewardLedger,
   createSimulationAllocationDraft,
   demoSimulationAllocationDraft,
   demoSimulationCycleRun,
@@ -182,6 +184,17 @@ export function createApp() {
 
     response.status(201).json({
       reflection: result
+    });
+  });
+  app.get("/api/rewards/jar", (_request, response) => {
+    response.json({
+      rewardJar: demoRewardJar
+    });
+  });
+
+  app.get("/api/rewards/history", (_request, response) => {
+    response.json({
+      ledger: demoRewardLedger
     });
   });
   app.get("/api/tasks", (_request, response) => {

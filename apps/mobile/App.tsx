@@ -2,8 +2,8 @@ import { useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
 import {
-  demoLinkedBankAccount,
   demoMockSession,
+  demoRewardJar,
   createSimulationAllocationDraft,
   demoSimulationAllocationDraft,
   createSimulationCycleRun,
@@ -18,6 +18,7 @@ import {
   taskStatusCopy,
   type SimulationAllocation,
   type SimulationCycleRun,
+  type RewardStatus,
   type TaskStatus
 } from "@growthmore/shared";
 import {
@@ -39,6 +40,8 @@ const recentLedger = demoVirtualBalanceLedger.slice(-3).reverse();
 const progressPercent = Math.round(home.level.progressPercent * 100);
 const virtualGrowthAmount = demoVirtualBalance.availableAmount.toLocaleString("zh-CN");
 const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
+const rewardJar = demoRewardJar;
+const recentRewardLedger = rewardJar.ledger.slice(0, 4);
 const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
 const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
 
@@ -52,6 +55,25 @@ const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" 
   reversed: "danger"
 };
 
+const rewardStatusCopy: Record<RewardStatus, string> = {
+  pending: "待校验",
+  available: "可领取",
+  locked: "暂锁定",
+  withdrawal_pending: "提现中",
+  paid: "已到账",
+  failed: "发放失败",
+  reversed: "已撤销"
+};
+
+const rewardStatusTone: Record<RewardStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
+  pending: "reward",
+  available: "success",
+  locked: "learning",
+  withdrawal_pending: "reward",
+  paid: "success",
+  failed: "danger",
+  reversed: "danger"
+};
 export default function App() {
   const [allocationDraft, setAllocationDraft] = useState(demoSimulationAllocationDraft);
   const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(demoSimulationCycleRun);
@@ -367,25 +389,72 @@ export default function App() {
 
         <DisclosureBanner body={demoTenant.disclosureCopy.virtualBalanceNotice} title="资金性质提醒" />
 
-        <Card style={styles.withdrawPanel}>
+        <Card style={styles.rewardPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">提现窗口</AppText>
+              <AppText variant="heading">奖励罐</AppText>
               <AppText color="textSecondary" variant="caption">
-                {home.withdrawalWindow.label}
+                真实奖励来自银行活动预算，按规则进入 reward_ledger
               </AppText>
             </View>
-            <Badge label="未开放" />
+            <Badge label={rewardStatusCopy.available} tone="success" />
           </View>
-          <View style={styles.accountRow}>
+
+          <View style={styles.rewardHero}>
             <View style={styles.sectionCopy}>
-              <AppText color="textSecondary" variant="label">
-                绑定账户
+              <AppText color="textSecondary" variant="label">奖励罐余额</AppText>
+              <AppText variant="title">¥{rewardJar.totalBalanceAmount.toFixed(2)}</AppText>
+              <AppText color="textSecondary" variant="caption">
+                可领取 ¥{rewardJar.availableAmount.toFixed(2)}，最低领取 ¥{rewardJar.minimumWithdrawalAmount.toFixed(2)}
               </AppText>
-              <AppText variant="bodyStrong">{demoLinkedBankAccount.accountNumberMasked}</AppText>
             </View>
-            <Button label="管理" variant="secondary" />
+            <Badge label={rewardJar.withdrawalWindow.status === "open" ? "窗口开放" : "窗口未开放"} tone={rewardJar.withdrawalWindow.status === "open" ? "success" : "learning"} />
           </View>
+
+          <View style={styles.rewardBreakdown}>
+            <View style={styles.rewardBucket}>
+              <AppText color="textSecondary" variant="label">待校验</AppText>
+              <AppText variant="bodyStrong">¥{rewardJar.pendingAmount.toFixed(2)}</AppText>
+            </View>
+            <View style={styles.rewardBucket}>
+              <AppText color="textSecondary" variant="label">锁定</AppText>
+              <AppText variant="bodyStrong">¥{rewardJar.lockedAmount.toFixed(2)}</AppText>
+            </View>
+            <View style={styles.rewardBucket}>
+              <AppText color="textSecondary" variant="label">本月预计</AppText>
+              <AppText variant="bodyStrong">¥{rewardJar.thisMonthEstimatedAmount.toFixed(2)}</AppText>
+            </View>
+          </View>
+
+          <View style={styles.rewardRuleBox}>
+            <AppText color="textSecondary" variant="caption">
+              {rewardJar.rewardRuleSummary}
+            </AppText>
+          </View>
+
+          <View style={styles.rewardLedgerList}>
+            {recentRewardLedger.map((entry) => (
+              <View key={entry.id} style={styles.rewardLedgerRow}>
+                <View style={styles.sectionCopy}>
+                  <AppText variant="bodyStrong">{entry.description}</AppText>
+                  <AppText color="textSecondary" variant="caption">
+                    {entry.sourceType} · {entry.activityRuleVersion} · {entry.budgetBatchId}
+                  </AppText>
+                  {entry.lockReason ? (
+                    <AppText color="textSecondary" variant="caption">{entry.lockReason}</AppText>
+                  ) : null}
+                </View>
+                <View style={styles.rewardLedgerAmount}>
+                  <AppText color={entry.status === "reversed" ? "danger" : "success"} variant="label">
+                    ¥{entry.amount.toFixed(2)}
+                  </AppText>
+                  <Badge label={rewardStatusCopy[entry.status]} tone={rewardStatusTone[entry.status]} />
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <DisclosureBanner body={rewardJar.disclosure} title="奖励来源提醒" />
         </Card>
       </Screen>
     </>
@@ -595,18 +664,54 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: spacing.md
   },
-  withdrawPanel: {
+  rewardPanel: {
     gap: spacing.lg
   },
-  accountRow: {
+  rewardHero: {
     alignItems: "center",
-    backgroundColor: colors.light.surfaceMuted,
+    backgroundColor: colors.light.successSoft,
     borderRadius: 12,
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
-    minHeight: 72,
+    minHeight: 88,
     padding: spacing.md
+  },
+  rewardBreakdown: {
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  rewardBucket: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 12,
+    flex: 1,
+    gap: spacing.xs,
+    minWidth: 0,
+    padding: spacing.md
+  },
+  rewardRuleBox: {
+    backgroundColor: colors.light.rewardSoft,
+    borderRadius: 12,
+    padding: spacing.md
+  },
+  rewardLedgerList: {
+    gap: spacing.md
+  },
+  rewardLedgerRow: {
+    alignItems: "flex-start",
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.md
+  },
+  rewardLedgerAmount: {
+    alignItems: "flex-end",
+    gap: spacing.sm,
+    minWidth: 88
   },
   sectionHeader: {
     alignItems: "flex-start",
