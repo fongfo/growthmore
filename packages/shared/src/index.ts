@@ -263,6 +263,43 @@ export type SimulationReflectionResult = {
   acceptedRiskConfirmation: boolean;
   messages: string[];
 };
+export type RewardStatus = "pending" | "available" | "locked" | "withdrawal_pending" | "paid" | "failed" | "reversed";
+
+export type RewardLedgerSourceType = "task" | "learning_cycle" | "campaign_budget" | "manual_review" | "withdrawal";
+
+export type RewardLedgerEntry = {
+  id: string;
+  userId: MockUserSession["user"]["id"];
+  status: RewardStatus;
+  amount: number;
+  currency: "CNY";
+  sourceType: RewardLedgerSourceType;
+  sourceId: string;
+  programId: string;
+  budgetBatchId: string;
+  activityRuleVersion: string;
+  description: string;
+  lockReason: string | null;
+  availableAt: string | null;
+  createdAt: string;
+};
+
+export type RewardJarSnapshot = {
+  userId: MockUserSession["user"]["id"];
+  currency: "CNY";
+  totalBalanceAmount: number;
+  availableAmount: number;
+  lockedAmount: number;
+  pendingAmount: number;
+  thisMonthEstimatedAmount: number;
+  thisMonthEarnedAmount: number;
+  minimumWithdrawalAmount: number;
+  withdrawalWindow: TodayHomeSummary["withdrawalWindow"];
+  disclosure: string;
+  rewardRuleSummary: string;
+  ledger: RewardLedgerEntry[];
+  statusCounts: Record<RewardStatus, number>;
+};
 export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
 
 export type TodayHomeSummary = {
@@ -1015,6 +1052,147 @@ export function validateSimulationReflection(
 }
 
 export const demoSimulationCycleRun = createSimulationCycleRun(demoSimulationAllocationDraft);
+
+export const demoRewardLedger: RewardLedgerEntry[] = [
+  {
+    id: "rwd-001",
+    userId: demoMockSession.user.id,
+    status: "available",
+    amount: 1.2,
+    currency: "CNY",
+    sourceType: "task",
+    sourceId: "risk-lesson",
+    programId: "demo-program-2026-08",
+    budgetBatchId: "budget-2026-08-learning",
+    activityRuleVersion: "reward-demo-v1",
+    description: "完成风险分散小课获得活动奖励。",
+    lockReason: null,
+    availableAt: "2026-08-25T15:00:00+08:00",
+    createdAt: "2026-08-25T15:00:00+08:00"
+  },
+  {
+    id: "rwd-002",
+    userId: demoMockSession.user.id,
+    status: "available",
+    amount: 2.5,
+    currency: "CNY",
+    sourceType: "task",
+    sourceId: "auto-savings-mock",
+    programId: "demo-program-2026-08",
+    budgetBatchId: "budget-2026-08-banking",
+    activityRuleVersion: "reward-demo-v1",
+    description: "完成自动储蓄 mock 校验获得活动奖励。",
+    lockReason: null,
+    availableAt: "2026-08-25T15:05:00+08:00",
+    createdAt: "2026-08-25T15:05:00+08:00"
+  },
+  {
+    id: "rwd-003",
+    userId: demoMockSession.user.id,
+    status: "pending",
+    amount: demoSimulationCycleRun.rewardActivityAmount,
+    currency: "CNY",
+    sourceType: "learning_cycle",
+    sourceId: demoSimulationCycleRun.id,
+    programId: "demo-program-2026-08",
+    budgetBatchId: "budget-2026-08-learning-cycle",
+    activityRuleVersion: "reward-demo-v1",
+    description: "完成学习周期和复盘后产生的待校验活动奖励。",
+    lockReason: "等待活动预算与风控校验。",
+    availableAt: null,
+    createdAt: "2026-08-25T15:12:00+08:00"
+  },
+  {
+    id: "rwd-004",
+    userId: demoMockSession.user.id,
+    status: "locked",
+    amount: 6,
+    currency: "CNY",
+    sourceType: "campaign_budget",
+    sourceId: "august-growth-campaign",
+    programId: "demo-program-2026-08",
+    budgetBatchId: "budget-2026-08-campaign",
+    activityRuleVersion: "reward-demo-v1",
+    description: "8 月成长活动奖励，需到提现窗口开放后领取。",
+    lockReason: "本月提现窗口尚未开放。",
+    availableAt: "2026-08-28T00:00:00+08:00",
+    createdAt: "2026-08-25T16:00:00+08:00"
+  },
+  {
+    id: "rwd-005",
+    userId: demoMockSession.user.id,
+    status: "paid",
+    amount: 18.8,
+    currency: "CNY",
+    sourceType: "withdrawal",
+    sourceId: "withdrawal-2026-07",
+    programId: "demo-program-2026-07",
+    budgetBatchId: "budget-2026-07-paid",
+    activityRuleVersion: "reward-demo-v1",
+    description: "7 月奖励已按活动规则发放到账。",
+    lockReason: null,
+    availableAt: "2026-07-30T10:00:00+08:00",
+    createdAt: "2026-07-30T10:00:00+08:00"
+  }
+];
+
+function createEmptyRewardStatusCounts(): Record<RewardStatus, number> {
+  return {
+    pending: 0,
+    available: 0,
+    locked: 0,
+    withdrawal_pending: 0,
+    paid: 0,
+    failed: 0,
+    reversed: 0
+  };
+}
+
+export function createRewardJarSnapshot(ledger: RewardLedgerEntry[]): RewardJarSnapshot {
+  const activeEntries = ledger.filter((entry) => !["paid", "failed", "reversed"].includes(entry.status));
+  const statusCounts = ledger.reduce((counts, entry) => {
+    counts[entry.status] += 1;
+    return counts;
+  }, createEmptyRewardStatusCounts());
+  const thisMonthEntries = ledger.filter((entry) => entry.createdAt.startsWith("2026-08"));
+
+  return {
+    userId: demoMockSession.user.id,
+    currency: "CNY",
+    totalBalanceAmount: Number(activeEntries.reduce((total, entry) => total + entry.amount, 0).toFixed(2)),
+    availableAmount: Number(
+      ledger.filter((entry) => entry.status === "available").reduce((total, entry) => total + entry.amount, 0).toFixed(2)
+    ),
+    lockedAmount: Number(
+      ledger.filter((entry) => entry.status === "locked").reduce((total, entry) => total + entry.amount, 0).toFixed(2)
+    ),
+    pendingAmount: Number(
+      ledger.filter((entry) => entry.status === "pending").reduce((total, entry) => total + entry.amount, 0).toFixed(2)
+    ),
+    thisMonthEstimatedAmount: Number(thisMonthEntries.reduce((total, entry) => total + entry.amount, 0).toFixed(2)),
+    thisMonthEarnedAmount: Number(
+      thisMonthEntries
+        .filter((entry) => ["available", "locked", "pending"].includes(entry.status))
+        .reduce((total, entry) => total + entry.amount, 0)
+        .toFixed(2)
+    ),
+    minimumWithdrawalAmount: 5,
+    withdrawalWindow: demoTodayWithdrawalWindow,
+    disclosure: demoTenant.disclosureCopy.rewardNotice,
+    rewardRuleSummary: "真实奖励只来自任务、学习动作、活动规则和银行预算；模拟投资涨跌不会进入奖励计算。",
+    ledger,
+    statusCounts
+  };
+}
+
+const demoTodayWithdrawalWindow = {
+  label: "本月提现窗口：8 月 28 日至 8 月 31 日",
+  opensAt: "2026-08-28T00:00:00+08:00",
+  closesAt: "2026-08-31T23:59:59+08:00",
+  status: "upcoming" as const
+};
+
+export const demoRewardJar = createRewardJarSnapshot(demoRewardLedger);
 export const demoTodayHomeSummary: TodayHomeSummary = {
   userId: demoMockSession.user.id,
   tenantSlug: demoTenant.slug,
@@ -1026,7 +1204,7 @@ export const demoTodayHomeSummary: TodayHomeSummary = {
   },
   balances: {
     virtualGrowthAmount: demoVirtualBalance.availableAmount,
-    rewardJarAmount: 28.5,
+    rewardJarAmount: demoRewardJar.totalBalanceAmount,
     currency: "CNY"
   },
   recommendedTask: {
@@ -1038,12 +1216,7 @@ export const demoTodayHomeSummary: TodayHomeSummary = {
     estimatedMinutes: 5,
     ctaLabel: "开始今日任务"
   },
-  withdrawalWindow: {
-    label: "本月提现窗口：8 月 28 日至 8 月 31 日",
-    opensAt: "2026-08-28T00:00:00+08:00",
-    closesAt: "2026-08-31T23:59:59+08:00",
-    status: "upcoming"
-  },
+  withdrawalWindow: demoTodayWithdrawalWindow,
   nextActions: [
     { id: "portfolio", label: "查看模拟组合" },
     { id: "reward", label: "领取奖励" },

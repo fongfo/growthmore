@@ -5,10 +5,13 @@ import {
   createTaskBoardSummary,
   createSimulationAllocationDraft,
   createSimulationCycleRun,
+  createRewardJarSnapshot,
   createVirtualBalanceSnapshot,
   defaultTenantTheme,
   demoLinkedBankAccount,
   demoMockSession,
+  demoRewardJar,
+  demoRewardLedger,
   demoSimulationAllocationDraft,
   demoSimulationCycleRun,
   demoSimulationProducts,
@@ -282,5 +285,47 @@ describe("simulation learning cycle and reflection", () => {
     expect(emptyRun.productResults).toHaveLength(0);
     expect(emptyRun.rewardActivityAmount).toBe(0);
     expect(emptyRun.riskConfirmationRequired).toBe(false);
+  });
+});
+describe("reward jar and ledger", () => {
+  it("derives the reward jar from auditable reward ledger states", () => {
+    expect(demoRewardLedger.map((entry) => entry.status)).toEqual([
+      "available",
+      "available",
+      "pending",
+      "locked",
+      "paid"
+    ]);
+    expect(demoRewardJar.totalBalanceAmount).toBe(11.5);
+    expect(demoRewardJar.availableAmount).toBe(3.7);
+    expect(demoRewardJar.pendingAmount).toBe(1.8);
+    expect(demoRewardJar.lockedAmount).toBe(6);
+    expect(demoRewardJar.statusCounts).toMatchObject({
+      available: 2,
+      pending: 1,
+      locked: 1,
+      paid: 1
+    });
+  });
+
+  it("keeps reward funding separate from simulated investment changes", () => {
+    expect(demoRewardJar.disclosure).toContain("银行活动预算");
+    expect(demoRewardJar.rewardRuleSummary).toContain("模拟投资涨跌不会进入奖励计算");
+    expect(demoRewardLedger.find((entry) => entry.sourceType === "learning_cycle")?.sourceId).toBe(demoSimulationCycleRun.id);
+    expect(demoRewardLedger.find((entry) => entry.sourceType === "learning_cycle")?.description).toContain("活动奖励");
+  });
+
+  it("supports recalculating reward jar snapshots from a subset of entries", () => {
+    const snapshot = createRewardJarSnapshot(demoRewardLedger.slice(0, 2));
+
+    expect(snapshot.totalBalanceAmount).toBe(3.7);
+    expect(snapshot.availableAmount).toBe(3.7);
+    expect(snapshot.lockedAmount).toBe(0);
+    expect(snapshot.minimumWithdrawalAmount).toBe(5);
+  });
+
+  it("uses the reward jar balance on the Today home summary", () => {
+    expect(demoTodayHomeSummary.balances.rewardJarAmount).toBe(demoRewardJar.totalBalanceAmount);
+    expect(demoTodayHomeSummary.withdrawalWindow).toEqual(demoRewardJar.withdrawalWindow);
   });
 });
