@@ -211,6 +211,58 @@ export type SimulationAllocationDraft = {
   examples: SimulationAllocationExample[];
 };
 
+export type SimulationProductCycleResult = {
+  productId: SimulationProduct["id"];
+  productName: SimulationProduct["name"];
+  riskLabel: SimulationProduct["riskLabel"];
+  startingAmount: number;
+  simulatedChangeAmount: number;
+  simulatedChangePercent: number;
+  endingAmount: number;
+  explanation: string;
+};
+
+export type SimulationReflectionQuestion = {
+  id: string;
+  prompt: string;
+  helperText: string;
+};
+
+export type SimulationCycleRun = {
+  id: string;
+  userId: MockUserSession["user"]["id"];
+  cycleLabel: string;
+  startedAt: string;
+  completedAt: string;
+  startingVirtualAmount: number;
+  simulatedEndingVirtualAmount: number;
+  simulatedChangeAmount: number;
+  simulatedChangePercent: number;
+  rewardActivityAmount: number;
+  rewardCalculationBasis: string;
+  disclosure: string;
+  riskConfirmationRequired: boolean;
+  riskConfirmationStatements: string[];
+  productResults: SimulationProductCycleResult[];
+  reflectionQuestions: SimulationReflectionQuestion[];
+};
+
+export type SimulationReflectionSubmission = {
+  runId: SimulationCycleRun["id"];
+  answers: Array<{
+    questionId: SimulationReflectionQuestion["id"];
+    answer: string;
+  }>;
+  riskConfirmationAccepted: boolean;
+};
+
+export type SimulationReflectionResult = {
+  runId: SimulationCycleRun["id"];
+  completed: boolean;
+  learningCompletionCoefficient: number;
+  acceptedRiskConfirmation: boolean;
+  messages: string[];
+};
 export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
 
 export type TodayHomeSummary = {
@@ -836,6 +888,133 @@ export function validateSimulationAllocations(
 }
 
 export const demoSimulationAllocationDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount);
+
+const demoSimulationCycleChangeByProductId: Record<SimulationProduct["id"], number> = {
+  "term-deposit": 0.18,
+  "money-market": 0.12,
+  bond: -0.35,
+  gold: -1.75,
+  "balanced-fund": 0.64
+};
+
+const demoSimulationCycleExplanationByProductId: Record<SimulationProduct["id"], string> = {
+  "term-deposit": "模拟定存本期小幅变化，用来理解期限和固定收益的稳定性。",
+  "money-market": "模拟货币基金本期变化较轻，重点观察流动性和低波动。",
+  bond: "模拟债券本期受利率情景影响小幅下行，用来理解票息和价格波动。",
+  gold: "模拟黄金本期波动更明显，这体现商品资产可能上涨也可能下跌。",
+  "balanced-fund": "模拟平衡基金通过分散配置抵消部分波动，用来理解组合管理。"
+};
+
+export const demoSimulationReflectionQuestions: SimulationReflectionQuestion[] = [
+  {
+    id: "highest-volatility",
+    prompt: "本期哪个模拟产品波动最明显？",
+    helperText: "观察涨跌幅，而不是只看配置金额。"
+  },
+  {
+    id: "allocation-lesson",
+    prompt: "这次组合配置让你学到什么？",
+    helperText: "可以写下分散配置、低波动资产或高波动资产带来的感受。"
+  },
+  {
+    id: "reward-boundary",
+    prompt: "真实奖励金为什么不能按模拟涨跌直接计算？",
+    helperText: "请确认奖励来自银行活动规则，不来自模拟投资收益。"
+  }
+];
+
+export const demoSimulationRiskConfirmationStatements = [
+  "我知道这是模拟学习，不代表真实投资收益。",
+  "我知道高波动产品可能上涨也可能下跌。",
+  "我知道真实投资需要完成银行风险测评和产品适当性流程。"
+];
+
+export function createSimulationCycleRun(
+  allocationDraft: SimulationAllocationDraft = demoSimulationAllocationDraft
+): SimulationCycleRun {
+  const productResults = allocationDraft.allocations
+    .filter((allocation) => allocation.amount > 0)
+    .map((allocation) => {
+      const product = demoSimulationProducts.find((item) => item.id === allocation.productId);
+      const simulatedChangePercent = demoSimulationCycleChangeByProductId[allocation.productId] ?? 0;
+      const simulatedChangeAmount = Number(((allocation.amount * simulatedChangePercent) / 100).toFixed(2));
+      const endingAmount = Number((allocation.amount + simulatedChangeAmount).toFixed(2));
+
+      return {
+        productId: allocation.productId,
+        productName: product?.name ?? allocation.productId,
+        riskLabel: product?.riskLabel ?? "未知风险",
+        startingAmount: allocation.amount,
+        simulatedChangeAmount,
+        simulatedChangePercent,
+        endingAmount,
+        explanation:
+          demoSimulationCycleExplanationByProductId[allocation.productId] ??
+          "本期模拟变化仅用于解释资产波动，不代表真实表现。"
+      };
+    });
+  const simulatedEndingVirtualAmount = Number(
+    productResults.reduce((total, result) => total + result.endingAmount, 0).toFixed(2)
+  );
+  const simulatedChangeAmount = Number((simulatedEndingVirtualAmount - allocationDraft.totalAllocatedAmount).toFixed(2));
+  const simulatedChangePercent =
+    allocationDraft.totalAllocatedAmount > 0
+      ? Number(((simulatedChangeAmount / allocationDraft.totalAllocatedAmount) * 100).toFixed(2))
+      : 0;
+  const hasHighVolatilityAllocation = allocationDraft.allocations.some((allocation) => {
+    const product = demoSimulationProducts.find((item) => item.id === allocation.productId);
+    return allocation.amount > 0 && product?.riskLevel === "medium_high";
+  });
+
+  return {
+    id: "simulation-run-2026-08-w4",
+    userId: allocationDraft.userId,
+    cycleLabel: "2026 年 8 月第 4 周学习周期",
+    startedAt: "2026-08-25T15:10:00+08:00",
+    completedAt: "2026-08-25T15:11:00+08:00",
+    startingVirtualAmount: allocationDraft.totalAllocatedAmount,
+    simulatedEndingVirtualAmount,
+    simulatedChangeAmount,
+    simulatedChangePercent,
+    rewardActivityAmount: allocationDraft.totalAllocatedAmount > 0 ? 1.8 : 0,
+    rewardCalculationBasis: "活动奖励按完成学习周期、复盘问题和风险确认计算，不使用模拟涨跌作为奖励因子。",
+    disclosure: "模拟涨跌只用于教育解释，不进入真实奖励计算。奖励金由银行活动预算提供，实际领取以活动规则和审核结果为准。",
+    riskConfirmationRequired: hasHighVolatilityAllocation,
+    riskConfirmationStatements: demoSimulationRiskConfirmationStatements,
+    productResults,
+    reflectionQuestions: demoSimulationReflectionQuestions
+  };
+}
+
+export function validateSimulationReflection(
+  run: SimulationCycleRun,
+  submission: SimulationReflectionSubmission
+): SimulationReflectionResult {
+  const messages: string[] = [];
+  const answeredQuestionIds = new Set(
+    submission.answers.filter((answer) => answer.answer.trim().length > 0).map((answer) => answer.questionId)
+  );
+
+  for (const question of run.reflectionQuestions) {
+    if (!answeredQuestionIds.has(question.id)) {
+      messages.push(`Reflection answer is required: ${question.id}`);
+    }
+  }
+
+  if (run.riskConfirmationRequired && !submission.riskConfirmationAccepted) {
+    messages.push("Risk confirmation is required for high-volatility simulation products.");
+  }
+
+  return {
+    runId: run.id,
+    completed: messages.length === 0,
+    learningCompletionCoefficient: messages.length === 0 ? 1 : 0,
+    acceptedRiskConfirmation: submission.riskConfirmationAccepted,
+    messages
+  };
+}
+
+export const demoSimulationCycleRun = createSimulationCycleRun(demoSimulationAllocationDraft);
 export const demoTodayHomeSummary: TodayHomeSummary = {
   userId: demoMockSession.user.id,
   tenantSlug: demoTenant.slug,

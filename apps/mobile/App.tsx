@@ -6,6 +6,8 @@ import {
   demoMockSession,
   createSimulationAllocationDraft,
   demoSimulationAllocationDraft,
+  createSimulationCycleRun,
+  demoSimulationCycleRun,
   demoSimulationProducts,
   demoTaskBoardSummary,
   demoTenant,
@@ -15,6 +17,7 @@ import {
   demoVirtualBalanceLedger,
   taskStatusCopy,
   type SimulationAllocation,
+  type SimulationCycleRun,
   type TaskStatus
 } from "@growthmore/shared";
 import {
@@ -51,17 +54,25 @@ const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" 
 
 export default function App() {
   const [allocationDraft, setAllocationDraft] = useState(demoSimulationAllocationDraft);
+  const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(demoSimulationCycleRun);
+  const [reflectionComplete, setReflectionComplete] = useState(false);
 
   const handleApplyExample = (exampleId: string) => {
     const example = allocationDraft.examples.find((item) => item.id === exampleId);
 
     if (example) {
-      setAllocationDraft(createSimulationAllocationDraft(demoVirtualBalance.availableAmount, example.allocations));
+      const nextDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount, example.allocations);
+      setAllocationDraft(nextDraft);
+      setSimulationRun(createSimulationCycleRun(nextDraft));
+      setReflectionComplete(false);
     }
   };
 
   const handleResetAllocation = () => {
-    setAllocationDraft(createSimulationAllocationDraft(demoVirtualBalance.availableAmount, []));
+    const nextDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount, []);
+    setAllocationDraft(nextDraft);
+    setSimulationRun(createSimulationCycleRun(nextDraft));
+    setReflectionComplete(false);
   };
 
   const getAllocationForProduct = (productId: string): SimulationAllocation =>
@@ -70,6 +81,14 @@ export default function App() {
       amount: 0,
       percent: 0
     };
+  const handleRunLearningCycle = () => {
+    setSimulationRun(createSimulationCycleRun(allocationDraft));
+    setReflectionComplete(false);
+  };
+
+  const handleCompleteReflection = () => {
+    setReflectionComplete(true);
+  };
   return (
     <>
       <StatusBar style="dark" />
@@ -208,6 +227,83 @@ export default function App() {
               我知道这是模拟学习；高波动产品可能上涨也可能下跌；真实投资需要完成银行风险测评。
             </AppText>
           </View>
+        </Card>
+        <Card style={styles.learningPanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="heading">投资学习</AppText>
+              <AppText color="textSecondary" variant="caption">
+                运行一个学习周期，查看模拟变化并完成复盘确认
+              </AppText>
+            </View>
+            <Badge label={reflectionComplete ? "已复盘" : "待复盘"} tone={reflectionComplete ? "success" : "reward"} />
+          </View>
+
+          <View style={styles.runSummary}>
+            <View style={styles.sectionCopy}>
+              <AppText color="textSecondary" variant="label">
+                {simulationRun?.cycleLabel ?? "当前学习周期"}
+              </AppText>
+              <AppText variant="title">
+                {simulationRun ? `${simulationRun.simulatedChangeAmount >= 0 ? "+" : ""}${simulationRun.simulatedChangeAmount.toFixed(2)} 成长金` : "等待运行"}
+              </AppText>
+              <AppText color="textSecondary" variant="caption">
+                模拟变化 {simulationRun ? `${simulationRun.simulatedChangePercent >= 0 ? "+" : ""}${simulationRun.simulatedChangePercent.toFixed(2)}%` : "--"}，活动奖励 ¥{(simulationRun?.rewardActivityAmount ?? 0).toFixed(2)}
+              </AppText>
+            </View>
+            <Button label="运行周期" onPress={handleRunLearningCycle} style={styles.runButton} />
+          </View>
+
+          <View style={styles.resultList}>
+            {simulationRun?.productResults.map((result) => (
+              <View key={result.productId} style={styles.resultRow}>
+                <View style={styles.sectionCopy}>
+                  <View style={styles.taskRowHeader}>
+                    <AppText variant="bodyStrong">{result.productName}</AppText>
+                    <View style={[styles.changePill, result.simulatedChangeAmount < 0 ? styles.changePillDown : styles.changePillUp]}>
+                      <AppText color={result.simulatedChangeAmount < 0 ? "danger" : "success"} variant="label">
+                        {result.simulatedChangePercent >= 0 ? "+" : ""}{result.simulatedChangePercent.toFixed(2)}%
+                      </AppText>
+                    </View>
+                  </View>
+                  <AppText color="textSecondary" variant="caption">
+                    {result.startingAmount.toLocaleString("zh-CN")} 至 {result.endingAmount.toLocaleString("zh-CN")} 成长金
+                  </AppText>
+                  <AppText color="textSecondary" variant="caption">
+                    {result.explanation}
+                  </AppText>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.reflectionList}>
+            {simulationRun?.reflectionQuestions.map((question, index) => (
+              <View key={question.id} style={styles.reflectionItem}>
+                <AppText variant="bodyStrong">{index + 1}. {question.prompt}</AppText>
+                <AppText color="textSecondary" variant="caption">
+                  {question.helperText}
+                </AppText>
+              </View>
+            ))}
+          </View>
+
+          {simulationRun?.riskConfirmationRequired ? (
+            <View style={styles.confirmationList}>
+              {simulationRun.riskConfirmationStatements.map((statement) => (
+                <View key={statement} style={styles.confirmationItem}>
+                  <View style={styles.confirmationDot} />
+                  <AppText color="textSecondary" variant="caption">{statement}</AppText>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <DisclosureBanner body={simulationRun?.disclosure ?? demoTenant.disclosureCopy.simulationNotice} title="学习周期提醒" />
+          <AppText color="textSecondary" variant="caption">
+            {simulationRun?.rewardCalculationBasis}
+          </AppText>
+          <Button label={reflectionComplete ? "复盘已完成" : "完成复盘与风险确认"} onPress={handleCompleteReflection} variant={reflectionComplete ? "secondary" : "primary"} />
         </Card>
         <Card style={styles.taskBoardPanel}>
           <View style={styles.sectionHeader}>
@@ -392,7 +488,70 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: spacing.md
   },
-  taskBoardPanel: {
+  learningPanel: {
+    gap: spacing.lg
+  },
+  runSummary: {
+    alignItems: "center",
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    minHeight: 88,
+    padding: spacing.md
+  },
+  runButton: {
+    minWidth: 104
+  },
+  resultList: {
+    gap: spacing.md
+  },
+  resultRow: {
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: spacing.md
+  },
+  changePill: {
+    borderRadius: 999,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  changePillUp: {
+    backgroundColor: colors.light.successSoft
+  },
+  changePillDown: {
+    backgroundColor: colors.light.dangerSoft
+  },
+  reflectionList: {
+    gap: spacing.md
+  },
+  reflectionItem: {
+    backgroundColor: colors.light.learningSoft,
+    borderRadius: 12,
+    gap: spacing.xs,
+    padding: spacing.md
+  },
+  confirmationList: {
+    backgroundColor: colors.light.dangerSoft,
+    borderRadius: 12,
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  confirmationItem: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  confirmationDot: {
+    backgroundColor: colors.light.danger,
+    borderRadius: 4,
+    height: 8,
+    marginTop: 5,
+    width: 8
+  },  taskBoardPanel: {
     gap: spacing.lg
   },
   filterRow: {

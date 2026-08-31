@@ -4,11 +4,13 @@ import {
   canTransitionTask,
   createTaskBoardSummary,
   createSimulationAllocationDraft,
+  createSimulationCycleRun,
   createVirtualBalanceSnapshot,
   defaultTenantTheme,
   demoLinkedBankAccount,
   demoMockSession,
   demoSimulationAllocationDraft,
+  demoSimulationCycleRun,
   demoSimulationProducts,
   demoTaskBoardSummary,
   demoTenant,
@@ -21,7 +23,8 @@ import {
   productLoopSteps,
   taskStatusCopy,
   transitionTaskStatus,
-  validateSimulationAllocations
+  validateSimulationAllocations,
+  validateSimulationReflection
 } from "./index";
 
 describe("shared project constants", () => {
@@ -226,5 +229,58 @@ describe("simulation products and allocations", () => {
     expect(validateSimulationAllocations(demoVirtualBalance.availableAmount, [
       { productId: "gold", amount: demoVirtualBalance.availableAmount + 1 }
     ])).toContain("Allocated amount cannot exceed available virtual growth balance.");
+  });
+});
+
+describe("simulation learning cycle and reflection", () => {
+  it("runs a deterministic learning cycle with explanations for allocated products", () => {
+    expect(demoSimulationCycleRun.productResults).toHaveLength(5);
+    expect(demoSimulationCycleRun.startingVirtualAmount).toBe(demoSimulationAllocationDraft.totalAllocatedAmount);
+    expect(demoSimulationCycleRun.simulatedEndingVirtualAmount).not.toBe(demoSimulationCycleRun.startingVirtualAmount);
+    expect(demoSimulationCycleRun.productResults.find((result) => result.productId === "gold")?.explanation).toContain("可能上涨也可能下跌");
+    expect(demoSimulationCycleRun.reflectionQuestions).toHaveLength(3);
+  });
+
+  it("keeps simulated changes out of reward activity calculation", () => {
+    expect(demoSimulationCycleRun.disclosure).toContain("不进入真实奖励计算");
+    expect(demoSimulationCycleRun.rewardCalculationBasis).toContain("不使用模拟涨跌");
+    expect(demoSimulationCycleRun.rewardActivityAmount).toBe(1.8);
+  });
+
+  it("requires high-volatility confirmation when gold is allocated", () => {
+    expect(demoSimulationCycleRun.riskConfirmationRequired).toBe(true);
+    expect(demoSimulationCycleRun.riskConfirmationStatements.join(" ")).toContain("银行风险测评");
+  });
+
+  it("validates reflection answers and risk confirmation", () => {
+    const incomplete = validateSimulationReflection(demoSimulationCycleRun, {
+      runId: demoSimulationCycleRun.id,
+      answers: [{ questionId: "highest-volatility", answer: "模拟黄金" }],
+      riskConfirmationAccepted: false
+    });
+    const complete = validateSimulationReflection(demoSimulationCycleRun, {
+      runId: demoSimulationCycleRun.id,
+      answers: demoSimulationCycleRun.reflectionQuestions.map((question) => ({
+        questionId: question.id,
+        answer: "已理解"
+      })),
+      riskConfirmationAccepted: true
+    });
+
+    expect(incomplete.completed).toBe(false);
+    expect(incomplete.messages).toContain("Risk confirmation is required for high-volatility simulation products.");
+    expect(complete).toMatchObject({
+      completed: true,
+      learningCompletionCoefficient: 1,
+      acceptedRiskConfirmation: true
+    });
+  });
+
+  it("supports an empty allocation learning cycle without reward activity", () => {
+    const emptyRun = createSimulationCycleRun(createSimulationAllocationDraft(demoVirtualBalance.availableAmount, []));
+
+    expect(emptyRun.productResults).toHaveLength(0);
+    expect(emptyRun.rewardActivityAmount).toBe(0);
+    expect(emptyRun.riskConfirmationRequired).toBe(false);
   });
 });

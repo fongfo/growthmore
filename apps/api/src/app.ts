@@ -4,10 +4,12 @@ import helmet from "helmet";
 import morgan from "morgan";
 import {
   applyTaskAction,
+  createSimulationCycleRun,
   demoLinkedBankAccount,
   demoMockSession,
   createSimulationAllocationDraft,
   demoSimulationAllocationDraft,
+  demoSimulationCycleRun,
   demoSimulationProducts,
   demoTaskBoardSummary,
   demoTenant,
@@ -16,7 +18,9 @@ import {
   demoVirtualBalance,
   demoVirtualBalanceLedger,
   validateSimulationAllocations,
+  validateSimulationReflection,
   type SimulationAllocation,
+  type SimulationReflectionSubmission,
   type TaskAction,
   type UserTask
 } from "@growthmore/shared";
@@ -128,6 +132,58 @@ export function createApp() {
     });
   });
 
+  app.get("/api/simulation/runs/current", (_request, response) => {
+    response.json({
+      run: demoSimulationCycleRun
+    });
+  });
+
+  app.post("/api/simulation/run", (request, response) => {
+    const allocations = Array.isArray(request.body?.allocations)
+      ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
+      : demoSimulationAllocationDraft.allocations;
+    const errors = validateSimulationAllocations(demoVirtualBalance.availableAmount, allocations);
+
+    if (errors.length > 0) {
+      response.status(400).json({
+        error: "invalid_simulation_allocations",
+        messages: errors
+      });
+      return;
+    }
+
+    response.status(201).json({
+      run: createSimulationCycleRun(createSimulationAllocationDraft(demoVirtualBalance.availableAmount, allocations))
+    });
+  });
+
+  app.post("/api/simulation/runs/:runId/reflection", (request, response) => {
+    const run = request.params.runId === demoSimulationCycleRun.id ? demoSimulationCycleRun : null;
+
+    if (!run) {
+      response.status(404).json({ error: "simulation_run_not_found" });
+      return;
+    }
+
+    const submission: SimulationReflectionSubmission = {
+      runId: request.params.runId,
+      answers: Array.isArray(request.body?.answers) ? request.body.answers : [],
+      riskConfirmationAccepted: request.body?.riskConfirmationAccepted === true
+    };
+    const result = validateSimulationReflection(run, submission);
+
+    if (!result.completed) {
+      response.status(400).json({
+        error: "incomplete_simulation_reflection",
+        reflection: result
+      });
+      return;
+    }
+
+    response.status(201).json({
+      reflection: result
+    });
+  });
   app.get("/api/tasks", (_request, response) => {
     response.json({
       summary: demoTaskBoardSummary,
