@@ -103,7 +103,7 @@ describe("app home", () => {
       },
       balances: {
         virtualGrowthAmount: 1550,
-        rewardJarAmount: 11.5,
+        rewardJarAmount: 13.5,
         currency: "CNY"
       },
       recommendedTask: {
@@ -112,7 +112,7 @@ describe("app home", () => {
         ctaLabel: "开始今日任务"
       },
       withdrawalWindow: {
-        status: "upcoming"
+        status: "open"
       }
     });
     expect(response.body.home.level.progressPercent).toBeGreaterThan(0);
@@ -310,21 +310,21 @@ describe("reward jar and ledger", () => {
     expect(response.status).toBe(200);
     expect(response.body.rewardJar).toMatchObject({
       currency: "CNY",
-      totalBalanceAmount: 11.5,
-      availableAmount: 3.7,
+      totalBalanceAmount: 13.5,
+      availableAmount: 5.7,
       lockedAmount: 6,
       pendingAmount: 1.8,
       minimumWithdrawalAmount: 5
     });
     expect(response.body.rewardJar.rewardRuleSummary).toContain("模拟投资涨跌不会进入奖励计算");
-    expect(response.body.rewardJar.ledger).toHaveLength(5);
+    expect(response.body.rewardJar.ledger).toHaveLength(6);
   });
 
   it("returns reward history with source and budget audit fields", async () => {
     const response = await request(createApp()).get("/api/rewards/history");
 
     expect(response.status).toBe(200);
-    expect(response.body.ledger).toHaveLength(5);
+    expect(response.body.ledger).toHaveLength(6);
     expect(response.body.ledger[0]).toMatchObject({
       id: "rwd-001",
       status: "available",
@@ -334,6 +334,72 @@ describe("reward jar and ledger", () => {
       activityRuleVersion: "reward-demo-v1"
     });
     expect(response.body.ledger.map((entry: { status: string }) => entry.status)).toContain("locked");
+  });
+});
+
+describe("withdrawals", () => {
+  it("submits a withdrawal request for manual review", async () => {
+    const response = await request(createApp()).post("/api/rewards/withdraw").send({ amount: 5 });
+
+    expect(response.status).toBe(201);
+    expect(response.body.withdrawal).toMatchObject({
+      amount: 5,
+      currency: "CNY",
+      status: "submitted",
+      estimatedArrivalLabel: "审核通过后 T+1 入账"
+    });
+    expect(response.body.withdrawal.disclosure).toContain("不接真实打款");
+  });
+
+  it("rejects invalid withdrawal requests", async () => {
+    const response = await request(createApp()).post("/api/rewards/withdraw").send({ amount: 999 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("invalid_withdrawal_request");
+    expect(response.body.messages).toContain("Withdrawal amount cannot exceed available reward balance.");
+  });
+
+  it("returns withdrawal requests with failure and rejection reasons", async () => {
+    const response = await request(createApp()).get("/api/withdrawals");
+
+    expect(response.status).toBe(200);
+    expect(response.body.withdrawals).toHaveLength(3);
+    expect(response.body.withdrawals.map((withdrawal: { status: string }) => withdrawal.status)).toEqual([
+      "under_review",
+      "rejected",
+      "failed"
+    ]);
+    expect(response.body.withdrawals[1].rejectionReason).toContain("账户状态");
+    expect(response.body.withdrawals[2].failureReason).toContain("银行通道");
+  });
+
+  it("supports admin withdrawal approve, reject, and retry actions", async () => {
+    const approved = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-09-review/approve").send({
+      reviewerId: "ops-demo"
+    });
+    const rejected = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-09-review/reject").send({
+      reason: "账户信息不一致"
+    });
+    const retried = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-08-failed/retry");
+
+    expect(approved.status).toBe(200);
+    expect(approved.body.withdrawal.status).toBe("approved");
+    expect(approved.body.withdrawal.reviewerId).toBe("ops-demo");
+    expect(rejected.status).toBe(200);
+    expect(rejected.body.withdrawal.status).toBe("rejected");
+    expect(rejected.body.withdrawal.rejectionReason).toBe("账户信息不一致");
+    expect(retried.status).toBe(200);
+    expect(retried.body.withdrawal.status).toBe("under_review");
+  });
+
+  it("rejects unknown or invalid admin withdrawal transitions", async () => {
+    const missing = await request(createApp()).post("/api/admin/withdrawals/missing/approve");
+    const invalid = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-08-rejected/retry");
+
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe("withdrawal_not_found");
+    expect(invalid.status).toBe(409);
+    expect(invalid.body.error).toBe("invalid_withdrawal_transition");
   });
 });
 describe("task system", () => {

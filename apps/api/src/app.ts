@@ -4,11 +4,13 @@ import helmet from "helmet";
 import morgan from "morgan";
 import {
   applyTaskAction,
+  applyWithdrawalReviewAction,
   createSimulationCycleRun,
   demoLinkedBankAccount,
   demoMockSession,
   demoRewardJar,
   demoRewardLedger,
+  demoWithdrawalRequests,
   createSimulationAllocationDraft,
   demoSimulationAllocationDraft,
   demoSimulationCycleRun,
@@ -19,6 +21,8 @@ import {
   demoUserTasks,
   demoVirtualBalance,
   demoVirtualBalanceLedger,
+  findDemoWithdrawalRequest,
+  createWithdrawalRequest,
   validateSimulationAllocations,
   validateSimulationReflection,
   type SimulationAllocation,
@@ -196,6 +200,85 @@ export function createApp() {
     response.json({
       ledger: demoRewardLedger
     });
+  });
+  app.post("/api/rewards/withdraw", (request, response) => {
+    const amount = Number(request.body?.amount);
+    const result = createWithdrawalRequest(demoRewardJar, demoLinkedBankAccount, amount);
+
+    if (result.errors.length > 0) {
+      response.status(400).json({
+        error: "invalid_withdrawal_request",
+        messages: result.errors
+      });
+      return;
+    }
+
+    response.status(201).json({
+      withdrawal: result.request
+    });
+  });
+
+  app.get("/api/withdrawals", (_request, response) => {
+    response.json({
+      withdrawals: demoWithdrawalRequests
+    });
+  });
+
+  app.post("/api/admin/withdrawals/:withdrawalId/approve", (request, response) => {
+    const withdrawal = findDemoWithdrawalRequest(request.params.withdrawalId);
+
+    if (!withdrawal) {
+      response.status(404).json({ error: "withdrawal_not_found" });
+      return;
+    }
+
+    const result = applyWithdrawalReviewAction(withdrawal, "approve", { reviewerId: request.body?.reviewerId });
+
+    if (result.error) {
+      response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
+      return;
+    }
+
+    response.json({ action: "approve", withdrawal: result.request });
+  });
+
+  app.post("/api/admin/withdrawals/:withdrawalId/reject", (request, response) => {
+    const withdrawal = findDemoWithdrawalRequest(request.params.withdrawalId);
+
+    if (!withdrawal) {
+      response.status(404).json({ error: "withdrawal_not_found" });
+      return;
+    }
+
+    const result = applyWithdrawalReviewAction(withdrawal, "reject", {
+      reason: request.body?.reason,
+      reviewerId: request.body?.reviewerId
+    });
+
+    if (result.error) {
+      response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
+      return;
+    }
+
+    response.json({ action: "reject", withdrawal: result.request });
+  });
+
+  app.post("/api/admin/withdrawals/:withdrawalId/retry", (request, response) => {
+    const withdrawal = findDemoWithdrawalRequest(request.params.withdrawalId);
+
+    if (!withdrawal) {
+      response.status(404).json({ error: "withdrawal_not_found" });
+      return;
+    }
+
+    const result = applyWithdrawalReviewAction(withdrawal, "retry", { reviewerId: request.body?.reviewerId });
+
+    if (result.error) {
+      response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
+      return;
+    }
+
+    response.json({ action: "retry", withdrawal: result.request });
   });
   app.get("/api/tasks", (_request, response) => {
     response.json({

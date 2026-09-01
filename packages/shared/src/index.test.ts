@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   applyTaskAction,
+  applyWithdrawalReviewAction,
   canTransitionTask,
   createTaskBoardSummary,
+  createWithdrawalRequest,
   createSimulationAllocationDraft,
   createSimulationCycleRun,
   createRewardJarSnapshot,
@@ -12,6 +14,7 @@ import {
   demoMockSession,
   demoRewardJar,
   demoRewardLedger,
+  demoWithdrawalRequests,
   demoSimulationAllocationDraft,
   demoSimulationCycleRun,
   demoSimulationProducts,
@@ -27,7 +30,8 @@ import {
   taskStatusCopy,
   transitionTaskStatus,
   validateSimulationAllocations,
-  validateSimulationReflection
+  validateSimulationReflection,
+  validateWithdrawalRequest
 } from "./index";
 
 describe("shared project constants", () => {
@@ -286,22 +290,60 @@ describe("simulation learning cycle and reflection", () => {
     expect(emptyRun.rewardActivityAmount).toBe(0);
     expect(emptyRun.riskConfirmationRequired).toBe(false);
   });
+  it("opens the current withdrawal window for mobile withdrawal flow", () => {
+    expect(demoTodayHomeSummary.withdrawalWindow.status).toBe("open");
+    expect(demoTodayHomeSummary.withdrawalWindow.label).toContain("9 月");
+  });
+
+  it("validates and creates withdrawal requests without real payouts", () => {
+    const invalid = validateWithdrawalRequest(demoRewardJar, demoLinkedBankAccount, demoRewardJar.minimumWithdrawalAmount - 1);
+    const result = createWithdrawalRequest(demoRewardJar, demoLinkedBankAccount, 5);
+
+    expect(invalid).toContain("Withdrawal amount is below the minimum withdrawal amount.");
+    expect(result.errors).toHaveLength(0);
+    expect(result.request).toMatchObject({
+      amount: 5,
+      currency: "CNY",
+      status: "submitted",
+      withdrawalAccount: {
+        accountNumberMasked: demoLinkedBankAccount.accountNumberMasked
+      }
+    });
+    expect(result.request?.rewardLedgerEntryIds).toContain("rwd-006");
+    expect(result.request?.disclosure).toContain("不接真实打款");
+  });
+
+  it("supports approve, reject, and retry transitions for withdrawal review", () => {
+    const reviewRequest = demoWithdrawalRequests.find((request) => request.status === "under_review");
+    const failedRequest = demoWithdrawalRequests.find((request) => request.status === "failed");
+    const approved = applyWithdrawalReviewAction(reviewRequest!, "approve");
+    const rejected = applyWithdrawalReviewAction(reviewRequest!, "reject", { reason: "账户信息不一致" });
+    const retried = applyWithdrawalReviewAction(failedRequest!, "retry");
+    const invalid = applyWithdrawalReviewAction(approved.request!, "retry");
+
+    expect(approved.request?.status).toBe("approved");
+    expect(rejected.request?.status).toBe("rejected");
+    expect(rejected.request?.rejectionReason).toBe("账户信息不一致");
+    expect(retried.request?.status).toBe("under_review");
+    expect(invalid.error).toContain("Invalid withdrawal transition");
+  });
 });
 describe("reward jar and ledger", () => {
   it("derives the reward jar from auditable reward ledger states", () => {
     expect(demoRewardLedger.map((entry) => entry.status)).toEqual([
       "available",
       "available",
+      "available",
       "pending",
       "locked",
       "paid"
     ]);
-    expect(demoRewardJar.totalBalanceAmount).toBe(11.5);
-    expect(demoRewardJar.availableAmount).toBe(3.7);
+    expect(demoRewardJar.totalBalanceAmount).toBe(13.5);
+    expect(demoRewardJar.availableAmount).toBe(5.7);
     expect(demoRewardJar.pendingAmount).toBe(1.8);
     expect(demoRewardJar.lockedAmount).toBe(6);
     expect(demoRewardJar.statusCounts).toMatchObject({
-      available: 2,
+      available: 3,
       pending: 1,
       locked: 1,
       paid: 1
