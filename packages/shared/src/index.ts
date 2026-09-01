@@ -300,6 +300,52 @@ export type RewardJarSnapshot = {
   ledger: RewardLedgerEntry[];
   statusCounts: Record<RewardStatus, number>;
 };
+export type WithdrawalStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "rejected"
+  | "paid"
+  | "failed"
+  | "cancelled";
+
+export type WithdrawalAccountSnapshot = Pick<
+  LinkedBankAccount,
+  "id" | "bankName" | "accountName" | "accountNumberMasked" | "currency" | "status"
+>;
+
+export type WithdrawalRequest = {
+  id: string;
+  userId: MockUserSession["user"]["id"];
+  amount: number;
+  currency: "CNY";
+  status: WithdrawalStatus;
+  rewardLedgerEntryIds: RewardLedgerEntry["id"][];
+  withdrawalAccount: WithdrawalAccountSnapshot;
+  submittedAt: string | null;
+  reviewedAt: string | null;
+  reviewerId: string | null;
+  estimatedArrivalLabel: string;
+  failureReason: string | null;
+  rejectionReason: string | null;
+  disclosure: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WithdrawalSubmissionResult = {
+  request: WithdrawalRequest | null;
+  errors: string[];
+};
+
+export type WithdrawalReviewAction = "approve" | "reject" | "retry";
+
+export type WithdrawalReviewResult = {
+  request: WithdrawalRequest | null;
+  error: string | null;
+};
+
 export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
 
 export type TodayHomeSummary = {
@@ -1087,6 +1133,22 @@ export const demoRewardLedger: RewardLedgerEntry[] = [
     createdAt: "2026-08-25T15:05:00+08:00"
   },
   {
+    id: "rwd-006",
+    userId: demoMockSession.user.id,
+    status: "available",
+    amount: 2,
+    currency: "CNY",
+    sourceType: "campaign_budget",
+    sourceId: "september-growth-campaign",
+    programId: "demo-program-2026-09",
+    budgetBatchId: "budget-2026-09-campaign",
+    activityRuleVersion: "reward-demo-v1",
+    description: "9 月成长活动可领取奖励。",
+    lockReason: null,
+    availableAt: "2026-09-01T09:00:00+08:00",
+    createdAt: "2026-09-01T09:00:00+08:00"
+  },
+  {
     id: "rwd-003",
     userId: demoMockSession.user.id,
     status: "pending",
@@ -1154,7 +1216,8 @@ export function createRewardJarSnapshot(ledger: RewardLedgerEntry[]): RewardJarS
     counts[entry.status] += 1;
     return counts;
   }, createEmptyRewardStatusCounts());
-  const thisMonthEntries = ledger.filter((entry) => entry.createdAt.startsWith("2026-08"));
+  const withdrawalMonthPrefix = demoTodayWithdrawalWindow.opensAt.slice(0, 7);
+  const thisMonthEntries = ledger.filter((entry) => entry.createdAt.startsWith(withdrawalMonthPrefix));
 
   return {
     userId: demoMockSession.user.id,
@@ -1186,13 +1249,229 @@ export function createRewardJarSnapshot(ledger: RewardLedgerEntry[]): RewardJarS
 }
 
 const demoTodayWithdrawalWindow = {
-  label: "本月提现窗口：8 月 28 日至 8 月 31 日",
-  opensAt: "2026-08-28T00:00:00+08:00",
-  closesAt: "2026-08-31T23:59:59+08:00",
-  status: "upcoming" as const
+  label: "本月提现窗口：9 月 1 日至 9 月 5 日",
+  opensAt: "2026-09-01T00:00:00+08:00",
+  closesAt: "2026-09-05T23:59:59+08:00",
+  status: "open" as const
 };
 
 export const demoRewardJar = createRewardJarSnapshot(demoRewardLedger);
+
+export const withdrawalDisclosure =
+  "Demo MVP 不接真实打款；提现申请进入人工审核，到账以银行活动规则和审核结果为准。";
+
+function toWithdrawalAccountSnapshot(account: LinkedBankAccount): WithdrawalAccountSnapshot {
+  return {
+    id: account.id,
+    bankName: account.bankName,
+    accountName: account.accountName,
+    accountNumberMasked: account.accountNumberMasked,
+    currency: account.currency,
+    status: account.status
+  };
+}
+
+function getAvailableRewardLedgerEntryIds(rewardJar: RewardJarSnapshot, amount: number): RewardLedgerEntry["id"][] {
+  const ids: RewardLedgerEntry["id"][] = [];
+  let remainingAmount = amount;
+
+  for (const entry of rewardJar.ledger.filter((item) => item.status === "available")) {
+    if (remainingAmount <= 0) {
+      break;
+    }
+
+    ids.push(entry.id);
+    remainingAmount = Number((remainingAmount - entry.amount).toFixed(2));
+  }
+
+  return ids;
+}
+
+export function validateWithdrawalRequest(
+  rewardJar: RewardJarSnapshot,
+  account: LinkedBankAccount,
+  amount: number
+): string[] {
+  const errors: string[] = [];
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    errors.push("Withdrawal amount must be greater than 0.");
+  }
+
+  if (amount > rewardJar.availableAmount) {
+    errors.push("Withdrawal amount cannot exceed available reward balance.");
+  }
+
+  if (amount < rewardJar.minimumWithdrawalAmount) {
+    errors.push("Withdrawal amount is below the minimum withdrawal amount.");
+  }
+
+  if (rewardJar.withdrawalWindow.status !== "open") {
+    errors.push("Withdrawal window is not open.");
+  }
+
+  if (account.status !== "linked" || !account.isWithdrawalAccount) {
+    errors.push("A linked withdrawal bank account is required.");
+  }
+
+  return errors;
+}
+
+export function createWithdrawalRequest(
+  rewardJar: RewardJarSnapshot = demoRewardJar,
+  account: LinkedBankAccount = demoLinkedBankAccount,
+  amount: number = rewardJar.availableAmount
+): WithdrawalSubmissionResult {
+  const errors = validateWithdrawalRequest(rewardJar, account, amount);
+
+  if (errors.length > 0) {
+    return { request: null, errors };
+  }
+
+  const createdAt = "2026-09-01T10:00:00+08:00";
+
+  return {
+    request: {
+      id: "withdrawal-2026-09-demo",
+      userId: rewardJar.userId,
+      amount: Number(amount.toFixed(2)),
+      currency: rewardJar.currency,
+      status: "submitted",
+      rewardLedgerEntryIds: getAvailableRewardLedgerEntryIds(rewardJar, amount),
+      withdrawalAccount: toWithdrawalAccountSnapshot(account),
+      submittedAt: createdAt,
+      reviewedAt: null,
+      reviewerId: null,
+      estimatedArrivalLabel: "审核通过后 T+1 入账",
+      failureReason: null,
+      rejectionReason: null,
+      disclosure: withdrawalDisclosure,
+      createdAt,
+      updatedAt: createdAt
+    },
+    errors: []
+  };
+}
+
+export const demoWithdrawalRequests: WithdrawalRequest[] = [
+  {
+    id: "withdrawal-2026-09-review",
+    userId: demoMockSession.user.id,
+    amount: 5,
+    currency: "CNY",
+    status: "under_review",
+    rewardLedgerEntryIds: ["rwd-001", "rwd-002", "rwd-006"],
+    withdrawalAccount: toWithdrawalAccountSnapshot(demoLinkedBankAccount),
+    submittedAt: "2026-09-01T09:20:00+08:00",
+    reviewedAt: null,
+    reviewerId: null,
+    estimatedArrivalLabel: "审核通过后 T+1 入账",
+    failureReason: null,
+    rejectionReason: null,
+    disclosure: withdrawalDisclosure,
+    createdAt: "2026-09-01T09:20:00+08:00",
+    updatedAt: "2026-09-01T09:25:00+08:00"
+  },
+  {
+    id: "withdrawal-2026-08-rejected",
+    userId: demoMockSession.user.id,
+    amount: 8,
+    currency: "CNY",
+    status: "rejected",
+    rewardLedgerEntryIds: ["rwd-004"],
+    withdrawalAccount: toWithdrawalAccountSnapshot(demoLinkedBankAccount),
+    submittedAt: "2026-08-30T11:00:00+08:00",
+    reviewedAt: "2026-08-30T15:30:00+08:00",
+    reviewerId: "reviewer-demo-001",
+    estimatedArrivalLabel: "审核通过后 T+1 入账",
+    failureReason: null,
+    rejectionReason: "账户状态需重新确认，请重新绑定提现账户后再申请。",
+    disclosure: withdrawalDisclosure,
+    createdAt: "2026-08-30T11:00:00+08:00",
+    updatedAt: "2026-08-30T15:30:00+08:00"
+  },
+  {
+    id: "withdrawal-2026-08-failed",
+    userId: demoMockSession.user.id,
+    amount: 5,
+    currency: "CNY",
+    status: "failed",
+    rewardLedgerEntryIds: ["rwd-001", "rwd-002"],
+    withdrawalAccount: toWithdrawalAccountSnapshot(demoLinkedBankAccount),
+    submittedAt: "2026-08-29T10:10:00+08:00",
+    reviewedAt: "2026-08-29T16:00:00+08:00",
+    reviewerId: "reviewer-demo-001",
+    estimatedArrivalLabel: "审核通过后 T+1 入账",
+    failureReason: "银行通道暂时不可用，可重试或转人工处理。",
+    rejectionReason: null,
+    disclosure: withdrawalDisclosure,
+    createdAt: "2026-08-29T10:10:00+08:00",
+    updatedAt: "2026-08-29T16:00:00+08:00"
+  }
+];
+
+export function findDemoWithdrawalRequest(withdrawalId: string): WithdrawalRequest | undefined {
+  return demoWithdrawalRequests.find((request) => request.id === withdrawalId);
+}
+
+export function applyWithdrawalReviewAction(
+  request: WithdrawalRequest,
+  action: WithdrawalReviewAction,
+  options?: { reason?: string; reviewerId?: string }
+): WithdrawalReviewResult {
+  const reviewedAt = "2026-09-01T11:00:00+08:00";
+  const reviewerId = options?.reviewerId ?? "reviewer-demo-001";
+
+  if (action === "approve" && ["submitted", "under_review"].includes(request.status)) {
+    return {
+      request: {
+        ...request,
+        status: "approved",
+        reviewedAt,
+        reviewerId,
+        failureReason: null,
+        rejectionReason: null,
+        updatedAt: reviewedAt
+      },
+      error: null
+    };
+  }
+
+  if (action === "reject" && ["submitted", "under_review"].includes(request.status)) {
+    return {
+      request: {
+        ...request,
+        status: "rejected",
+        reviewedAt,
+        reviewerId,
+        failureReason: null,
+        rejectionReason: options?.reason ?? "提现申请未通过人工审核，请检查账户与活动资格后重试。",
+        updatedAt: reviewedAt
+      },
+      error: null
+    };
+  }
+
+  if (action === "retry" && request.status === "failed") {
+    return {
+      request: {
+        ...request,
+        status: "under_review",
+        reviewedAt: null,
+        reviewerId,
+        failureReason: null,
+        rejectionReason: null,
+        updatedAt: reviewedAt
+      },
+      error: null
+    };
+  }
+
+  return {
+    request: null,
+    error: `Invalid withdrawal transition: ${request.status} -> ${action}`
+  };
+}
 export const demoTodayHomeSummary: TodayHomeSummary = {
   userId: demoMockSession.user.id,
   tenantSlug: demoTenant.slug,

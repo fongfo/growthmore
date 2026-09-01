@@ -3,7 +3,9 @@ import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
 import {
   demoMockSession,
+  demoLinkedBankAccount,
   demoRewardJar,
+  demoWithdrawalRequests,
   createSimulationAllocationDraft,
   demoSimulationAllocationDraft,
   createSimulationCycleRun,
@@ -16,9 +18,11 @@ import {
   demoVirtualBalance,
   demoVirtualBalanceLedger,
   taskStatusCopy,
+  validateWithdrawalRequest,
   type SimulationAllocation,
   type SimulationCycleRun,
   type RewardStatus,
+  type WithdrawalStatus,
   type TaskStatus
 } from "@growthmore/shared";
 import {
@@ -42,6 +46,9 @@ const virtualGrowthAmount = demoVirtualBalance.availableAmount.toLocaleString("z
 const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
 const rewardJar = demoRewardJar;
 const recentRewardLedger = rewardJar.ledger.slice(0, 4);
+const withdrawalRequests = demoWithdrawalRequests.slice(0, 3);
+const withdrawalErrors = validateWithdrawalRequest(rewardJar, demoLinkedBankAccount, rewardJar.availableAmount);
+const canSubmitWithdrawal = withdrawalErrors.length === 0;
 const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
 const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
 
@@ -73,6 +80,28 @@ const rewardStatusTone: Record<RewardStatus, "default" | "success" | "learning" 
   paid: "success",
   failed: "danger",
   reversed: "danger"
+};
+
+const withdrawalStatusCopy: Record<WithdrawalStatus, string> = {
+  draft: "草稿",
+  submitted: "已提交",
+  under_review: "审核中",
+  approved: "已通过",
+  rejected: "未通过",
+  paid: "已到账",
+  failed: "处理失败",
+  cancelled: "已取消"
+};
+
+const withdrawalStatusTone: Record<WithdrawalStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
+  draft: "default",
+  submitted: "reward",
+  under_review: "reward",
+  approved: "success",
+  rejected: "danger",
+  paid: "success",
+  failed: "danger",
+  cancelled: "default"
 };
 export default function App() {
   const [allocationDraft, setAllocationDraft] = useState(demoSimulationAllocationDraft);
@@ -432,6 +461,49 @@ export default function App() {
             </AppText>
           </View>
 
+          <View style={styles.withdrawalBox}>
+            <View style={styles.taskRowHeader}>
+              <View style={styles.sectionCopy}>
+                <AppText variant="bodyStrong">提现申请</AppText>
+                <AppText color="textSecondary" variant="caption">
+                  {rewardJar.withdrawalWindow.label} · {demoLinkedBankAccount.bankName} {demoLinkedBankAccount.accountNumberMasked}
+                </AppText>
+              </View>
+              <Badge label={canSubmitWithdrawal ? "可提交" : "需满足规则"} tone={canSubmitWithdrawal ? "success" : "learning"} />
+            </View>
+            <View style={styles.withdrawalSummaryRow}>
+              <View style={styles.sectionCopy}>
+                <AppText color="textSecondary" variant="label">可提现金额</AppText>
+                <AppText variant="title">¥{rewardJar.availableAmount.toFixed(2)}</AppText>
+              </View>
+              <Button disabled={!canSubmitWithdrawal} label="提交申请" style={styles.withdrawalButton} />
+            </View>
+            {withdrawalErrors.length > 0 ? (
+              <View style={styles.withdrawalReasonBox}>
+                {withdrawalErrors.map((error) => (
+                  <AppText key={error} color="textSecondary" variant="caption">{error}</AppText>
+                ))}
+              </View>
+            ) : (
+              <AppText color="textSecondary" variant="caption">审核通过后 T+1 入账；Demo MVP 不接真实打款。</AppText>
+            )}
+            <View style={styles.withdrawalList}>
+              {withdrawalRequests.map((withdrawal) => (
+                <View key={withdrawal.id} style={styles.withdrawalRow}>
+                  <View style={styles.sectionCopy}>
+                    <AppText variant="bodyStrong">¥{withdrawal.amount.toFixed(2)} 提现申请</AppText>
+                    <AppText color="textSecondary" variant="caption">
+                      {withdrawal.estimatedArrivalLabel} · {withdrawal.withdrawalAccount.accountNumberMasked}
+                    </AppText>
+                    {withdrawal.rejectionReason || withdrawal.failureReason ? (
+                      <AppText color="danger" variant="caption">{withdrawal.rejectionReason ?? withdrawal.failureReason}</AppText>
+                    ) : null}
+                  </View>
+                  <Badge label={withdrawalStatusCopy[withdrawal.status]} tone={withdrawalStatusTone[withdrawal.status]} />
+                </View>
+              ))}
+            </View>
+          </View>
           <View style={styles.rewardLedgerList}>
             {recentRewardLedger.map((entry) => (
               <View key={entry.id} style={styles.rewardLedgerRow}>
@@ -620,7 +692,8 @@ const styles = StyleSheet.create({
     height: 8,
     marginTop: 5,
     width: 8
-  },  taskBoardPanel: {
+  },
+  taskBoardPanel: {
     gap: spacing.lg
   },
   filterRow: {
@@ -693,6 +766,40 @@ const styles = StyleSheet.create({
     backgroundColor: colors.light.rewardSoft,
     borderRadius: 12,
     padding: spacing.md
+  },
+  withdrawalBox: {
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  withdrawalSummaryRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  withdrawalButton: {
+    minWidth: 104
+  },
+  withdrawalReasonBox: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 8,
+    gap: spacing.xs,
+    padding: spacing.md
+  },
+  withdrawalList: {
+    gap: spacing.sm
+  },
+  withdrawalRow: {
+    alignItems: "flex-start",
+    borderTopColor: colors.light.border,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    paddingTop: spacing.md
   },
   rewardLedgerList: {
     gap: spacing.md
