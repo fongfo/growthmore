@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { StyleSheet, View } from "react-native";
 import {
   demoMockSession,
+  demoComplianceSummary,
   demoLinkedBankAccount,
   demoRewardJar,
   demoWithdrawalRequests,
@@ -19,6 +20,7 @@ import {
   demoVirtualBalanceLedger,
   taskStatusCopy,
   validateWithdrawalRequest,
+  type DisclosureType,
   type SimulationAllocation,
   type SimulationCycleRun,
   type RewardStatus,
@@ -49,8 +51,19 @@ const recentRewardLedger = rewardJar.ledger.slice(0, 4);
 const withdrawalRequests = demoWithdrawalRequests.slice(0, 3);
 const withdrawalErrors = validateWithdrawalRequest(rewardJar, demoLinkedBankAccount, rewardJar.availableAmount);
 const canSubmitWithdrawal = withdrawalErrors.length === 0;
+const complianceSummary = demoComplianceSummary;
+const complianceAuditLogs = complianceSummary.latestAuditLogs.slice(0, 3);
 const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
 const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
+
+
+const disclosureTypeCopy: Record<DisclosureType, string> = {
+  virtual_balance: "虚拟成长金",
+  simulation: "模拟学习",
+  reward_rule: "奖励规则",
+  withdrawal: "提现规则",
+  real_product_redirect: "真实产品"
+};
 
 const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
   available: "learning",
@@ -154,6 +167,59 @@ export default function App() {
           <Badge label="已登录" tone="success" />
         </View>
 
+
+        <Card style={styles.compliancePanel}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="heading">必要披露与确认</AppText>
+              <AppText color="textSecondary" variant="caption">
+                已确认 {complianceSummary.acceptedDisclosureCount} / {complianceSummary.requiredDisclosureCount} 个提现前必要披露
+              </AppText>
+            </View>
+            <Badge label={complianceSummary.pendingDisclosureCount === 0 ? "已满足" : "待确认"} tone={complianceSummary.pendingDisclosureCount === 0 ? "success" : "reward"} />
+          </View>
+
+          <View style={styles.complianceChecklist}>
+            {complianceSummary.requiredDisclosures.map((disclosure) => {
+              const accepted = complianceSummary.acceptedDisclosures.some(
+                (acceptance) => acceptance.disclosureId === disclosure.id && acceptance.version === disclosure.version
+              );
+
+              return (
+                <View key={disclosure.id} style={styles.disclosureRow}>
+                  <View style={[styles.disclosureMarker, accepted ? styles.disclosureMarkerAccepted : styles.disclosureMarkerPending]} />
+                  <View style={styles.sectionCopy}>
+                    <AppText variant="bodyStrong">{disclosure.title}</AppText>
+                    <AppText color="textSecondary" variant="caption">
+                      {disclosureTypeCopy[disclosure.type]} · {disclosure.version}
+                    </AppText>
+                    <AppText color="textSecondary" variant="caption">{disclosure.body}</AppText>
+                  </View>
+                  <Badge label={accepted ? "已确认" : "未确认"} tone={accepted ? "success" : "reward"} />
+                </View>
+              );
+            })}
+          </View>
+
+          <View style={styles.auditList}>
+            {complianceAuditLogs.map((log) => (
+              <View key={log.id} style={styles.auditRow}>
+                <View style={styles.sectionCopy}>
+                  <AppText variant="bodyStrong">{log.summary}</AppText>
+                  <AppText color="textSecondary" variant="caption">
+                    {log.action} · {log.actorType} · {log.occurredAt.slice(0, 10)}
+                  </AppText>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          <Button
+            disabled={complianceSummary.pendingDisclosureCount === 0}
+            label={complianceSummary.pendingDisclosureCount === 0 ? "必要披露已确认" : "确认必要披露"}
+            variant={complianceSummary.pendingDisclosureCount === 0 ? "secondary" : "primary"}
+          />
+        </Card>
         <Card style={styles.todayPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -543,6 +609,41 @@ const styles = StyleSheet.create({
   identityBlock: {
     flex: 1,
     gap: spacing.xs
+  },
+  compliancePanel: {
+    gap: spacing.lg
+  },
+  complianceChecklist: {
+    gap: spacing.md
+  },
+  disclosureRow: {
+    alignItems: "flex-start",
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  disclosureMarker: {
+    borderRadius: 6,
+    height: 12,
+    marginTop: 4,
+    width: 12
+  },
+  disclosureMarkerAccepted: {
+    backgroundColor: colors.light.success
+  },
+  disclosureMarkerPending: {
+    backgroundColor: colors.light.reward
+  },
+  auditList: {
+    gap: spacing.sm
+  },
+  auditRow: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 10,
+    padding: spacing.md
   },
   todayPanel: {
     gap: spacing.lg

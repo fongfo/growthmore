@@ -337,6 +337,76 @@ describe("reward jar and ledger", () => {
   });
 });
 
+
+describe("disclosures and audit logs", () => {
+  it("returns active disclosure versions", async () => {
+    const response = await request(createApp()).get("/api/disclosures");
+
+    expect(response.status).toBe(200);
+    expect(response.body.disclosures).toHaveLength(5);
+    expect(response.body.disclosures.map((disclosure: { type: string }) => disclosure.type)).toContain("withdrawal");
+    expect(response.body.disclosures.find((disclosure: { type: string }) => disclosure.type === "reward_rule").body).toContain(
+      "不是模拟投资收益"
+    );
+  });
+
+  it("returns required and pending disclosures for withdrawal", async () => {
+    const response = await request(createApp()).get("/api/disclosures/required?requiredFor=withdrawal");
+
+    expect(response.status).toBe(200);
+    expect(response.body.requiredFor).toBe("withdrawal");
+    expect(response.body.disclosures.map((disclosure: { type: string }) => disclosure.type)).toEqual([
+      "reward_rule",
+      "withdrawal"
+    ]);
+    expect(response.body.pendingDisclosures.map((disclosure: { type: string }) => disclosure.type)).toEqual(["withdrawal"]);
+  });
+
+  it("rejects unknown disclosure contexts", async () => {
+    const response = await request(createApp()).get("/api/disclosures/required?requiredFor=unknown");
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("invalid_disclosure_context");
+  });
+
+  it("accepts a disclosure version and returns an audit log", async () => {
+    const response = await request(createApp()).post("/api/disclosures/disclosure-withdrawal-v1/accept").set({
+      "User-Agent": "GrowthmoreMobile/0.1 test"
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.acceptance).toMatchObject({
+      disclosureId: "disclosure-withdrawal-v1",
+      disclosureType: "withdrawal",
+      channel: "api"
+    });
+    expect(response.body.auditLog).toMatchObject({
+      action: "disclosure.accepted",
+      entityType: "disclosure"
+    });
+  });
+
+  it("returns current disclosure acceptance summary", async () => {
+    const response = await request(createApp()).get("/api/disclosure-acceptances/current");
+
+    expect(response.status).toBe(200);
+    expect(response.body.acceptances).toHaveLength(3);
+    expect(response.body.compliance).toMatchObject({
+      requiredDisclosureCount: 2,
+      acceptedDisclosureCount: 1,
+      pendingDisclosureCount: 1
+    });
+  });
+
+  it("returns admin audit logs", async () => {
+    const response = await request(createApp()).get("/api/admin/audit-logs");
+
+    expect(response.status).toBe(200);
+    expect(response.body.auditLogs).toHaveLength(5);
+    expect(response.body.auditLogs.map((log: { action: string }) => log.action)).toContain("withdrawal.reviewed");
+    expect(response.body.auditLogs.every((log: { ipAddressMasked: string; userAgent: string }) => log.ipAddressMasked && log.userAgent)).toBe(true);
+  });
+});
 describe("withdrawals", () => {
   it("submits a withdrawal request for manual review", async () => {
     const response = await request(createApp()).post("/api/rewards/withdraw").send({ amount: 5 });

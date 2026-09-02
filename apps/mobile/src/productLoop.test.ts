@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { demoRewardJar, demoTenant, demoWithdrawalRequests, productLoopSteps } from "@growthmore/shared";
+import { demoComplianceSummary, demoRewardJar, demoTenant, demoWithdrawalRequests, productLoopSteps } from "@growthmore/shared";
 import { touch } from "./theme";
 
 describe("mobile scaffold", () => {
@@ -20,5 +20,14 @@ describe("mobile scaffold", () => {
     expect(demoRewardJar.rewardRuleSummary).toContain("模拟投资涨跌不会进入奖励计算");
     expect(demoRewardJar.ledger.map((entry) => entry.status)).toContain("locked");
     expect(demoWithdrawalRequests.map((request) => request.status)).toContain("under_review");
+  });
+  it("uses the shared compliance summary for required mobile disclosures", () => {
+    expect(demoComplianceSummary.requiredDisclosures.map((disclosure) => disclosure.type)).toEqual([
+      "reward_rule",
+      "withdrawal"
+    ]);
+    expect(demoComplianceSummary.pendingDisclosureCount).toBe(1);
+    expect(demoComplianceSummary.pendingDisclosures[0]?.body).toContain("不接真实 KYC");
+    expect(demoComplianceSummary.latestAuditLogs.map((log) => log.action)).toContain("withdrawal.submitted");
   });
 });

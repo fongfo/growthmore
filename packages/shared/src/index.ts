@@ -346,6 +346,78 @@ export type WithdrawalReviewResult = {
   error: string | null;
 };
 
+export type DisclosureType = "virtual_balance" | "simulation" | "reward_rule" | "withdrawal" | "real_product_redirect";
+
+export type DisclosureStatus = "active" | "superseded";
+
+export type DisclosureRequiredFor = "onboarding" | "task" | "simulation" | "reward" | "withdrawal" | "real_product";
+
+export type DisclosureVersion = {
+  id: string;
+  type: DisclosureType;
+  version: string;
+  title: string;
+  body: string;
+  requiredFor: DisclosureRequiredFor[];
+  status: DisclosureStatus;
+  effectiveAt: string;
+};
+
+export type DisclosureAcceptanceChannel = "mobile" | "api";
+
+export type DisclosureAcceptance = {
+  id: string;
+  userId: MockUserSession["user"]["id"];
+  disclosureId: DisclosureVersion["id"];
+  disclosureType: DisclosureType;
+  version: DisclosureVersion["version"];
+  acceptedAt: string;
+  channel: DisclosureAcceptanceChannel;
+  ipAddressMasked: string;
+  userAgent: string;
+};
+
+export type DisclosureAcceptanceResult = {
+  acceptance: DisclosureAcceptance | null;
+  auditLog: AuditLogEntry | null;
+  error: string | null;
+};
+
+export type AuditActorType = "user" | "admin" | "system";
+
+export type AuditAction =
+  | "disclosure.accepted"
+  | "task.status_changed"
+  | "reward.ledger_created"
+  | "withdrawal.submitted"
+  | "withdrawal.reviewed";
+
+export type AuditEntityType = "disclosure" | "task" | "reward_ledger" | "withdrawal_request";
+
+export type AuditLogEntry = {
+  id: string;
+  actorType: AuditActorType;
+  actorId: string;
+  action: AuditAction;
+  entityType: AuditEntityType;
+  entityId: string;
+  occurredAt: string;
+  ipAddressMasked: string;
+  userAgent: string;
+  summary: string;
+  metadata: Record<string, string | number | boolean | null>;
+};
+
+export type ComplianceSummary = {
+  requiredDisclosureCount: number;
+  acceptedDisclosureCount: number;
+  pendingDisclosureCount: number;
+  requiredDisclosures: DisclosureVersion[];
+  acceptedDisclosures: DisclosureAcceptance[];
+  pendingDisclosures: DisclosureVersion[];
+  latestAuditLogs: AuditLogEntry[];
+};
+
 export type TodayTaskType = "daily_check_in" | "learning" | "simulation" | "reward_claim";
 
 export type TodayHomeSummary = {
@@ -1472,6 +1544,253 @@ export function applyWithdrawalReviewAction(
     error: `Invalid withdrawal transition: ${request.status} -> ${action}`
   };
 }
+
+export const demoDisclosureVersions: DisclosureVersion[] = [
+  {
+    id: "disclosure-virtual-balance-v1",
+    type: "virtual_balance",
+    version: "virtual-balance-2026-09-v1",
+    title: "虚拟成长金不是现金",
+    body: "虚拟成长金只用于投资学习和模拟配置，不是存款、现金或真实可提现资产。",
+    requiredFor: ["onboarding", "task", "simulation"],
+    status: "active",
+    effectiveAt: "2026-09-01T00:00:00+08:00"
+  },
+  {
+    id: "disclosure-simulation-v1",
+    type: "simulation",
+    version: "simulation-2026-09-v1",
+    title: "模拟变化不代表真实收益",
+    body: "模拟组合涨跌只用于教育解释，不构成投资建议，也不会直接决定真实奖励金额。",
+    requiredFor: ["simulation"],
+    status: "active",
+    effectiveAt: "2026-09-01T00:00:00+08:00"
+  },
+  {
+    id: "disclosure-reward-rule-v1",
+    type: "reward_rule",
+    version: "reward-rule-2026-09-v1",
+    title: "真实奖励来自银行活动预算",
+    body: "奖励罐金额来自银行活动预算、任务完成和活动资格，不是模拟投资收益或理财分红。",
+    requiredFor: ["reward", "withdrawal"],
+    status: "active",
+    effectiveAt: "2026-09-01T00:00:00+08:00"
+  },
+  {
+    id: "disclosure-withdrawal-v1",
+    type: "withdrawal",
+    version: "withdrawal-2026-09-v1",
+    title: "提现需审核且 Demo 不真实打款",
+    body: "提现申请会进入人工审核；Demo MVP 不接真实 KYC、真实银行账户查询或真实打款。",
+    requiredFor: ["withdrawal"],
+    status: "active",
+    effectiveAt: "2026-09-01T00:00:00+08:00"
+  },
+  {
+    id: "disclosure-real-product-v1",
+    type: "real_product_redirect",
+    version: "real-product-2026-09-v1",
+    title: "真实产品需进入银行合规流程",
+    body: "如果跳转真实基金、理财、黄金、证券或保险产品，必须完成银行风险测评、适当性和销售披露。",
+    requiredFor: ["real_product"],
+    status: "active",
+    effectiveAt: "2026-09-01T00:00:00+08:00"
+  }
+];
+
+export const demoDisclosureAcceptances: DisclosureAcceptance[] = [
+  {
+    id: "acceptance-virtual-balance-001",
+    userId: demoMockSession.user.id,
+    disclosureId: "disclosure-virtual-balance-v1",
+    disclosureType: "virtual_balance",
+    version: "virtual-balance-2026-09-v1",
+    acceptedAt: "2026-09-01T08:10:00+08:00",
+    channel: "mobile",
+    ipAddressMasked: "192.0.2.*",
+    userAgent: "GrowthmoreMobile/0.1 demo"
+  },
+  {
+    id: "acceptance-simulation-001",
+    userId: demoMockSession.user.id,
+    disclosureId: "disclosure-simulation-v1",
+    disclosureType: "simulation",
+    version: "simulation-2026-09-v1",
+    acceptedAt: "2026-09-01T08:12:00+08:00",
+    channel: "mobile",
+    ipAddressMasked: "192.0.2.*",
+    userAgent: "GrowthmoreMobile/0.1 demo"
+  },
+  {
+    id: "acceptance-reward-rule-001",
+    userId: demoMockSession.user.id,
+    disclosureId: "disclosure-reward-rule-v1",
+    disclosureType: "reward_rule",
+    version: "reward-rule-2026-09-v1",
+    acceptedAt: "2026-09-01T08:20:00+08:00",
+    channel: "mobile",
+    ipAddressMasked: "192.0.2.*",
+    userAgent: "GrowthmoreMobile/0.1 demo"
+  }
+];
+
+export const demoAuditLogs: AuditLogEntry[] = [
+  {
+    id: "audit-001",
+    actorType: "user",
+    actorId: demoMockSession.user.id,
+    action: "disclosure.accepted",
+    entityType: "disclosure",
+    entityId: "disclosure-virtual-balance-v1",
+    occurredAt: "2026-09-01T08:10:00+08:00",
+    ipAddressMasked: "192.0.2.*",
+    userAgent: "GrowthmoreMobile/0.1 demo",
+    summary: "用户确认虚拟成长金不是现金。",
+    metadata: { disclosureVersion: "virtual-balance-2026-09-v1" }
+  },
+  {
+    id: "audit-002",
+    actorType: "user",
+    actorId: demoMockSession.user.id,
+    action: "disclosure.accepted",
+    entityType: "disclosure",
+    entityId: "disclosure-simulation-v1",
+    occurredAt: "2026-09-01T08:12:00+08:00",
+    ipAddressMasked: "192.0.2.*",
+    userAgent: "GrowthmoreMobile/0.1 demo",
+    summary: "用户确认模拟变化不代表真实收益。",
+    metadata: { disclosureVersion: "simulation-2026-09-v1" }
+  },
+  {
+    id: "audit-003",
+    actorType: "user",
+    actorId: demoMockSession.user.id,
+    action: "withdrawal.submitted",
+    entityType: "withdrawal_request",
+    entityId: "withdrawal-2026-09-review",
+    occurredAt: "2026-09-01T09:20:00+08:00",
+    ipAddressMasked: "192.0.2.*",
+    userAgent: "GrowthmoreMobile/0.1 demo",
+    summary: "用户提交提现申请，进入人工审核。",
+    metadata: { amount: 5, currency: "CNY", realPayout: false }
+  },
+  {
+    id: "audit-004",
+    actorType: "admin",
+    actorId: "reviewer-demo-001",
+    action: "withdrawal.reviewed",
+    entityType: "withdrawal_request",
+    entityId: "withdrawal-2026-08-rejected",
+    occurredAt: "2026-08-30T15:30:00+08:00",
+    ipAddressMasked: "198.51.100.*",
+    userAgent: "GrowthmoreAdmin/0.1 demo",
+    summary: "后台拒绝提现申请并记录账户状态原因。",
+    metadata: { status: "rejected", reason: "账户状态需重新确认" }
+  },
+  {
+    id: "audit-005",
+    actorType: "system",
+    actorId: "reward-engine-demo",
+    action: "reward.ledger_created",
+    entityType: "reward_ledger",
+    entityId: "rwd-006",
+    occurredAt: "2026-09-01T09:00:00+08:00",
+    ipAddressMasked: "system",
+    userAgent: "GrowthmoreRewardEngine/0.1 demo",
+    summary: "系统创建 9 月活动奖励流水。",
+    metadata: { programId: "demo-program-2026-09", budgetBatchId: "budget-2026-09-campaign" }
+  }
+];
+
+export function getRequiredDisclosureVersions(requiredFor: DisclosureRequiredFor): DisclosureVersion[] {
+  return demoDisclosureVersions.filter(
+    (disclosure) => disclosure.status === "active" && disclosure.requiredFor.includes(requiredFor)
+  );
+}
+
+export function getPendingDisclosureVersions(
+  requiredFor: DisclosureRequiredFor,
+  acceptances: DisclosureAcceptance[] = demoDisclosureAcceptances
+): DisclosureVersion[] {
+  const acceptedVersions = new Set(acceptances.map((acceptance) => `${acceptance.disclosureId}:${acceptance.version}`));
+
+  return getRequiredDisclosureVersions(requiredFor).filter(
+    (disclosure) => !acceptedVersions.has(`${disclosure.id}:${disclosure.version}`)
+  );
+}
+
+export function findDisclosureVersion(disclosureId: string): DisclosureVersion | undefined {
+  return demoDisclosureVersions.find((disclosure) => disclosure.id === disclosureId);
+}
+
+export function createDisclosureAcceptance(
+  disclosureId: string,
+  options?: { channel?: DisclosureAcceptanceChannel; userAgent?: string; ipAddressMasked?: string }
+): DisclosureAcceptanceResult {
+  const disclosure = findDisclosureVersion(disclosureId);
+
+  if (!disclosure || disclosure.status !== "active") {
+    return {
+      acceptance: null,
+      auditLog: null,
+      error: "Disclosure version is not active or does not exist."
+    };
+  }
+
+  const acceptedAt = "2026-09-02T09:00:00+08:00";
+  const acceptance: DisclosureAcceptance = {
+    id: `acceptance-${disclosure.type}-demo`,
+    userId: demoMockSession.user.id,
+    disclosureId: disclosure.id,
+    disclosureType: disclosure.type,
+    version: disclosure.version,
+    acceptedAt,
+    channel: options?.channel ?? "api",
+    ipAddressMasked: options?.ipAddressMasked ?? "192.0.2.*",
+    userAgent: options?.userAgent ?? "GrowthmoreAPI/0.1 demo"
+  };
+
+  return {
+    acceptance,
+    auditLog: {
+      id: `audit-${acceptance.id}`,
+      actorType: "user",
+      actorId: acceptance.userId,
+      action: "disclosure.accepted",
+      entityType: "disclosure",
+      entityId: disclosure.id,
+      occurredAt: acceptedAt,
+      ipAddressMasked: acceptance.ipAddressMasked,
+      userAgent: acceptance.userAgent,
+      summary: `用户确认披露版本：${disclosure.title}`,
+      metadata: {
+        disclosureType: disclosure.type,
+        disclosureVersion: disclosure.version,
+        channel: acceptance.channel
+      }
+    },
+    error: null
+  };
+}
+
+export function createComplianceSummary(requiredFor: DisclosureRequiredFor = "withdrawal"): ComplianceSummary {
+  const requiredDisclosures = getRequiredDisclosureVersions(requiredFor);
+  const pendingDisclosures = getPendingDisclosureVersions(requiredFor);
+  const acceptedIds = new Set(requiredDisclosures.map((disclosure) => disclosure.id));
+  const acceptedDisclosures = demoDisclosureAcceptances.filter((acceptance) => acceptedIds.has(acceptance.disclosureId));
+
+  return {
+    requiredDisclosureCount: requiredDisclosures.length,
+    acceptedDisclosureCount: acceptedDisclosures.length,
+    pendingDisclosureCount: pendingDisclosures.length,
+    requiredDisclosures,
+    acceptedDisclosures,
+    pendingDisclosures,
+    latestAuditLogs: [...demoAuditLogs].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)).slice(0, 5)
+  };
+}
+
+export const demoComplianceSummary = createComplianceSummary("withdrawal");
 export const demoTodayHomeSummary: TodayHomeSummary = {
   userId: demoMockSession.user.id,
   tenantSlug: demoTenant.slug,
