@@ -5,7 +5,12 @@ import morgan from "morgan";
 import {
   applyTaskAction,
   applyWithdrawalReviewAction,
+  createDisclosureAcceptance,
   createSimulationCycleRun,
+  demoAuditLogs,
+  demoComplianceSummary,
+  demoDisclosureAcceptances,
+  demoDisclosureVersions,
   demoLinkedBankAccount,
   demoMockSession,
   demoRewardJar,
@@ -22,6 +27,8 @@ import {
   demoVirtualBalance,
   demoVirtualBalanceLedger,
   findDemoWithdrawalRequest,
+  getPendingDisclosureVersions,
+  getRequiredDisclosureVersions,
   createWithdrawalRequest,
   validateSimulationAllocations,
   validateSimulationReflection,
@@ -86,6 +93,61 @@ export function createApp() {
   app.get("/api/bank-accounts/current", (_request, response) => {
     response.json({
       account: demoLinkedBankAccount
+    });
+  });
+
+
+  app.get("/api/disclosures", (_request, response) => {
+    response.json({
+      disclosures: demoDisclosureVersions
+    });
+  });
+
+  app.get("/api/disclosures/required", (request, response) => {
+    const requiredFor = String(request.query.requiredFor ?? "withdrawal");
+
+    if (!["onboarding", "task", "simulation", "reward", "withdrawal", "real_product"].includes(requiredFor)) {
+      response.status(400).json({ error: "invalid_disclosure_context" });
+      return;
+    }
+
+    const disclosureContext = requiredFor as Parameters<typeof getRequiredDisclosureVersions>[0];
+
+    response.json({
+      requiredFor,
+      disclosures: getRequiredDisclosureVersions(disclosureContext),
+      pendingDisclosures: getPendingDisclosureVersions(disclosureContext)
+    });
+  });
+
+  app.post("/api/disclosures/:disclosureId/accept", (request, response) => {
+    const result = createDisclosureAcceptance(request.params.disclosureId, {
+      channel: "api",
+      userAgent: request.get("user-agent") ?? "GrowthmoreAPI/0.1 demo",
+      ipAddressMasked: "192.0.2.*"
+    });
+
+    if (result.error) {
+      response.status(404).json({ error: "disclosure_not_found", message: result.error });
+      return;
+    }
+
+    response.status(201).json({
+      acceptance: result.acceptance,
+      auditLog: result.auditLog
+    });
+  });
+
+  app.get("/api/disclosure-acceptances/current", (_request, response) => {
+    response.json({
+      acceptances: demoDisclosureAcceptances,
+      compliance: demoComplianceSummary
+    });
+  });
+
+  app.get("/api/admin/audit-logs", (_request, response) => {
+    response.json({
+      auditLogs: demoAuditLogs
     });
   });
 

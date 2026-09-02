@@ -7,9 +7,15 @@ import {
   createWithdrawalRequest,
   createSimulationAllocationDraft,
   createSimulationCycleRun,
+  createComplianceSummary,
+  createDisclosureAcceptance,
   createRewardJarSnapshot,
   createVirtualBalanceSnapshot,
   defaultTenantTheme,
+  demoAuditLogs,
+  demoComplianceSummary,
+  demoDisclosureAcceptances,
+  demoDisclosureVersions,
   demoLinkedBankAccount,
   demoMockSession,
   demoRewardJar,
@@ -25,6 +31,8 @@ import {
   demoVirtualBalance,
   demoVirtualBalanceLedger,
   getAvailableTaskActions,
+  getPendingDisclosureVersions,
+  getRequiredDisclosureVersions,
   getNextTaskStatus,
   productLoopSteps,
   taskStatusCopy,
@@ -369,5 +377,62 @@ describe("reward jar and ledger", () => {
   it("uses the reward jar balance on the Today home summary", () => {
     expect(demoTodayHomeSummary.balances.rewardJarAmount).toBe(demoRewardJar.totalBalanceAmount);
     expect(demoTodayHomeSummary.withdrawalWindow).toEqual(demoRewardJar.withdrawalWindow);
+  });
+});
+describe("disclosures and audit logs", () => {
+  it("publishes active disclosure versions for regulated product boundaries", () => {
+    expect(demoDisclosureVersions.map((disclosure) => disclosure.type)).toEqual([
+      "virtual_balance",
+      "simulation",
+      "reward_rule",
+      "withdrawal",
+      "real_product_redirect"
+    ]);
+    expect(demoDisclosureVersions.every((disclosure) => disclosure.status === "active")).toBe(true);
+    expect(demoDisclosureVersions.find((disclosure) => disclosure.type === "virtual_balance")?.body).toContain("不是存款、现金");
+    expect(demoDisclosureVersions.find((disclosure) => disclosure.type === "reward_rule")?.body).toContain("不是模拟投资收益");
+  });
+
+  it("tracks accepted and pending disclosure versions by required context", () => {
+    const withdrawalRequired = getRequiredDisclosureVersions("withdrawal");
+    const withdrawalPending = getPendingDisclosureVersions("withdrawal");
+
+    expect(withdrawalRequired.map((disclosure) => disclosure.type)).toEqual(["reward_rule", "withdrawal"]);
+    expect(demoDisclosureAcceptances.map((acceptance) => acceptance.disclosureType)).toContain("reward_rule");
+    expect(withdrawalPending.map((disclosure) => disclosure.type)).toEqual(["withdrawal"]);
+    expect(demoComplianceSummary).toMatchObject({
+      requiredDisclosureCount: 2,
+      acceptedDisclosureCount: 1,
+      pendingDisclosureCount: 1
+    });
+  });
+
+  it("creates acceptance records with matching audit logs", () => {
+    const result = createDisclosureAcceptance("disclosure-withdrawal-v1", {
+      channel: "mobile",
+      userAgent: "GrowthmoreMobile/0.1 test"
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.acceptance).toMatchObject({
+      disclosureId: "disclosure-withdrawal-v1",
+      disclosureType: "withdrawal",
+      version: "withdrawal-2026-09-v1",
+      channel: "mobile"
+    });
+    expect(result.auditLog).toMatchObject({
+      action: "disclosure.accepted",
+      entityType: "disclosure",
+      entityId: "disclosure-withdrawal-v1"
+    });
+  });
+
+  it("keeps admin and system operations visible in audit logs", () => {
+    const summary = createComplianceSummary("withdrawal");
+
+    expect(demoAuditLogs.map((log) => log.action)).toContain("withdrawal.reviewed");
+    expect(demoAuditLogs.map((log) => log.action)).toContain("reward.ledger_created");
+    expect(summary.latestAuditLogs.length).toBeGreaterThanOrEqual(3);
+    expect(summary.latestAuditLogs.every((log) => log.ipAddressMasked && log.userAgent)).toBe(true);
   });
 });
