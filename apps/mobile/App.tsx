@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { StatusBar } from "expo-status-bar";
-import { StyleSheet, View } from "react-native";
+import { Pressable, SafeAreaView, StyleSheet, View } from "react-native";
 import {
   demoMockSession,
   demoComplianceSummary,
@@ -106,6 +106,15 @@ const withdrawalStatusCopy: Record<WithdrawalStatus, string> = {
   cancelled: "已取消"
 };
 
+type TabId = "today" | "earn" | "allocate" | "grow" | "rewards";
+
+const tabs: Array<{ id: TabId; label: string }> = [
+  { id: "today", label: "今日" },
+  { id: "earn", label: "任务" },
+  { id: "allocate", label: "配置" },
+  { id: "grow", label: "成长" },
+  { id: "rewards", label: "奖励" }
+];
 const withdrawalStatusTone: Record<WithdrawalStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
   draft: "default",
   submitted: "reward",
@@ -117,6 +126,7 @@ const withdrawalStatusTone: Record<WithdrawalStatus, "default" | "success" | "le
   cancelled: "default"
 };
 export default function App() {
+  const [activeTab, setActiveTab] = useState<TabId>("today");
   const [allocationDraft, setAllocationDraft] = useState(demoSimulationAllocationDraft);
   const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(demoSimulationCycleRun);
   const [reflectionComplete, setReflectionComplete] = useState(false);
@@ -154,9 +164,10 @@ export default function App() {
     setReflectionComplete(true);
   };
   return (
-    <>
+    <View style={styles.appRoot}>
       <StatusBar style="dark" />
-      <Screen>
+      <View style={styles.scene}>
+        <Screen contentStyle={styles.tabScreenContent}>
         <View style={styles.topBar}>
           <View style={styles.identityBlock}>
             <AppText color="textSecondary" variant="label">
@@ -168,6 +179,7 @@ export default function App() {
         </View>
 
 
+        {activeTab === "rewards" ? (
         <Card style={styles.compliancePanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -220,6 +232,10 @@ export default function App() {
             variant={complianceSummary.pendingDisclosureCount === 0 ? "secondary" : "primary"}
           />
         </Card>
+        ) : null}
+
+        {activeTab === "today" ? (
+        <>
         <Card style={styles.todayPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -234,7 +250,7 @@ export default function App() {
             计划进度 {progressPercent}%，今天还剩 {home.level.remainingTaskCount} 个任务。
           </AppText>
           <ProgressBar accessibilityLabel={`当前计划进度 ${progressPercent}%`} value={home.level.progressPercent} />
-          <Button label={home.recommendedTask.ctaLabel} />
+          <Button label="开始今日任务" onPress={() => setActiveTab("earn")} />
         </Card>
 
         <View style={styles.metrics}>
@@ -283,6 +299,10 @@ export default function App() {
         </Card>
 
 
+        </>
+        ) : null}
+
+        {activeTab === "allocate" ? (
         <Card style={styles.allocationPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -345,6 +365,9 @@ export default function App() {
             </AppText>
           </View>
         </Card>
+        ) : null}
+
+        {activeTab === "grow" ? (
         <Card style={styles.learningPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -422,6 +445,10 @@ export default function App() {
           </AppText>
           <Button label={reflectionComplete ? "复盘已完成" : "完成复盘与风险确认"} onPress={handleCompleteReflection} variant={reflectionComplete ? "secondary" : "primary"} />
         </Card>
+        ) : null}
+
+        {activeTab === "earn" ? (
+        <>
         <Card style={styles.taskBoardPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -483,7 +510,10 @@ export default function App() {
         </Card>
 
         <DisclosureBanner body={demoTenant.disclosureCopy.virtualBalanceNotice} title="资金性质提醒" />
+        </>
+        ) : null}
 
+        {activeTab === "rewards" ? (
         <Card style={styles.rewardPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -594,12 +624,91 @@ export default function App() {
 
           <DisclosureBanner body={rewardJar.disclosure} title="奖励来源提醒" />
         </Card>
-      </Screen>
-    </>
+        ) : null}
+        </Screen>
+      </View>
+      <SafeAreaView style={styles.tabSafeArea}>
+        <View style={styles.tabBar}>
+          {tabs.map((tab) => {
+            const selected = activeTab === tab.id;
+
+            return (
+              <Pressable
+                accessibilityLabel={`${tab.label}页面`}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                key={tab.id}
+                onPress={() => setActiveTab(tab.id)}
+                style={({ pressed }) => [
+                  styles.tabItem,
+                  selected ? styles.tabItemActive : undefined,
+                  pressed ? styles.tabItemPressed : undefined
+                ]}
+              >
+                <View style={[styles.tabIndicator, selected ? styles.tabIndicatorActive : undefined]} />
+                <AppText color={selected ? "primary" : "textSecondary"} variant="caption">
+                  {tab.label}
+                </AppText>
+              </Pressable>
+            );
+          })}
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  appRoot: {
+    backgroundColor: colors.light.background,
+    flex: 1
+  },
+  scene: {
+    flex: 1
+  },
+  tabSafeArea: {
+    backgroundColor: colors.light.surface
+  },
+  tabBar: {
+    alignItems: "center",
+    backgroundColor: colors.light.surface,
+    borderTopColor: colors.light.border,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm
+  },
+  tabItem: {
+    alignItems: "center",
+    borderRadius: 12,
+    flex: 1,
+    gap: spacing.xs,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingVertical: spacing.xs
+  },
+  tabItemActive: {
+    backgroundColor: colors.light.surfaceMuted
+  },
+  tabItemPressed: {
+    opacity: 0.72
+  },
+  tabIndicator: {
+    backgroundColor: colors.light.borderStrong,
+    borderRadius: 999,
+    height: 4,
+    width: 18
+  },
+  tabIndicatorActive: {
+    backgroundColor: colors.light.primary,
+    width: 28
+  },
+  tabScreenContent: {
+    gap: spacing.lg,
+    paddingBottom: spacing.xxl
+  },
   topBar: {
     alignItems: "center",
     flexDirection: "row",

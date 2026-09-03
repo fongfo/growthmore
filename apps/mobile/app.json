@@ -15,8 +15,11 @@
       "package": "com.growthmore.mobile"
     },
     "extra": {
-      "apiBaseUrl": "http://localhost:4000"
-    }
+      "apiBaseUrl": "http://localhost:4000",
+      "eas": {
+        "projectId": "b3b7f8a9-81d5-4a3b-a986-af3e834ea5e4"
+      }
+    },
+    "owner": "fongfo"
   }
 }
-
