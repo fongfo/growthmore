@@ -7,4 +7,5 @@ coverage/
 .DS_Store
 Thumbs.db
 .code-review-graph/
+apps/mobile/build/
 
