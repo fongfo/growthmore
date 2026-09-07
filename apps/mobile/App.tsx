@@ -1,23 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { Pressable, SafeAreaView, StyleSheet, View } from "react-native";
 import {
-  demoMockSession,
-  demoComplianceSummary,
-  demoLinkedBankAccount,
-  demoRewardJar,
-  demoWithdrawalRequests,
   createSimulationAllocationDraft,
-  demoSimulationAllocationDraft,
   createSimulationCycleRun,
-  demoSimulationCycleRun,
-  demoSimulationProducts,
-  demoTaskBoardSummary,
-  demoTenant,
-  demoTodayHomeSummary,
-  demoUserTasks,
-  demoVirtualBalance,
-  demoVirtualBalanceLedger,
   taskStatusCopy,
   validateWithdrawalRequest,
   type DisclosureType,
@@ -37,25 +23,9 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
+import { fallbackMobileAppData } from "./src/api/mobileAppData";
+import { useMobileAppData } from "./src/api/useMobileAppData";
 import { colors, spacing } from "./src/theme";
-
-const home = demoTodayHomeSummary;
-const taskBoard = demoTaskBoardSummary;
-const taskList = demoUserTasks.slice(0, 5);
-const recentLedger = demoVirtualBalanceLedger.slice(-3).reverse();
-const progressPercent = Math.round(home.level.progressPercent * 100);
-const virtualGrowthAmount = demoVirtualBalance.availableAmount.toLocaleString("zh-CN");
-const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
-const rewardJar = demoRewardJar;
-const recentRewardLedger = rewardJar.ledger.slice(0, 4);
-const withdrawalRequests = demoWithdrawalRequests.slice(0, 3);
-const withdrawalErrors = validateWithdrawalRequest(rewardJar, demoLinkedBankAccount, rewardJar.availableAmount);
-const canSubmitWithdrawal = withdrawalErrors.length === 0;
-const complianceSummary = demoComplianceSummary;
-const complianceAuditLogs = complianceSummary.latestAuditLogs.slice(0, 3);
-const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
-const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
-
 
 const disclosureTypeCopy: Record<DisclosureType, string> = {
   virtual_balance: "虚拟成长金",
@@ -126,16 +96,40 @@ const withdrawalStatusTone: Record<WithdrawalStatus, "default" | "success" | "le
   cancelled: "default"
 };
 export default function App() {
+  const { data, errorMessage, isFallback, refresh, status } = useMobileAppData();
   const [activeTab, setActiveTab] = useState<TabId>("today");
-  const [allocationDraft, setAllocationDraft] = useState(demoSimulationAllocationDraft);
-  const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(demoSimulationCycleRun);
+  const [allocationDraft, setAllocationDraft] = useState(fallbackMobileAppData.allocationDraft);
+  const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(fallbackMobileAppData.simulationRun);
   const [reflectionComplete, setReflectionComplete] = useState(false);
+
+  useEffect(() => {
+    setAllocationDraft(data.allocationDraft);
+    setSimulationRun(data.simulationRun);
+    setReflectionComplete(false);
+  }, [data.allocationDraft, data.simulationRun]);
+
+  const home = data.home;
+  const taskBoard = data.taskBoard;
+  const taskList = data.tasks.slice(0, 5);
+  const recentLedger = data.virtualBalanceLedger.slice(-3).reverse();
+  const progressPercent = Math.round(home.level.progressPercent * 100);
+  const virtualGrowthAmount = data.virtualBalance.availableAmount.toLocaleString("zh-CN");
+  const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
+  const rewardJar = data.rewardJar;
+  const recentRewardLedger = data.rewardLedger.slice(0, 4);
+  const withdrawalRequests = data.withdrawals.slice(0, 3);
+  const withdrawalErrors = validateWithdrawalRequest(rewardJar, data.linkedBankAccount, rewardJar.availableAmount);
+  const canSubmitWithdrawal = withdrawalErrors.length === 0;
+  const complianceSummary = data.complianceSummary;
+  const complianceAuditLogs = complianceSummary.latestAuditLogs.slice(0, 3);
+  const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
+  const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
 
   const handleApplyExample = (exampleId: string) => {
     const example = allocationDraft.examples.find((item) => item.id === exampleId);
 
     if (example) {
-      const nextDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount, example.allocations);
+      const nextDraft = createSimulationAllocationDraft(data.virtualBalance.availableAmount, example.allocations);
       setAllocationDraft(nextDraft);
       setSimulationRun(createSimulationCycleRun(nextDraft));
       setReflectionComplete(false);
@@ -143,7 +137,7 @@ export default function App() {
   };
 
   const handleResetAllocation = () => {
-    const nextDraft = createSimulationAllocationDraft(demoVirtualBalance.availableAmount, []);
+    const nextDraft = createSimulationAllocationDraft(data.virtualBalance.availableAmount, []);
     setAllocationDraft(nextDraft);
     setSimulationRun(createSimulationCycleRun(nextDraft));
     setReflectionComplete(false);
@@ -171,13 +165,31 @@ export default function App() {
         <View style={styles.topBar}>
           <View style={styles.identityBlock}>
             <AppText color="textSecondary" variant="label">
-              {demoTenant.displayName}
+              {data.tenant.displayName}
             </AppText>
-            <AppText variant="heading">Hi, {demoMockSession.user.displayName}</AppText>
+            <AppText variant="heading">Hi, {data.session.user.displayName}</AppText>
           </View>
-          <Badge label="已登录" tone="success" />
+          <Badge label={status === "loading" ? "连接中" : isFallback ? "演示数据" : "API 已连接"} tone={isFallback ? "learning" : "success"} />
         </View>
 
+        {status === "loading" ? (
+          <Card style={styles.apiStatusPanel}>
+            <AppText variant="bodyStrong">正在连接 API 数据</AppText>
+            <AppText color="textSecondary" variant="caption">移动端会优先读取本地 Growthmore API。</AppText>
+          </Card>
+        ) : null}
+
+        {status === "error" ? (
+          <Card style={styles.apiStatusPanel}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="bodyStrong">当前使用演示数据</AppText>
+              <AppText color="textSecondary" variant="caption">
+                API 暂时不可用，页面已自动回退到内置 Demo 数据。{errorMessage ? ` ${errorMessage}` : ""}
+              </AppText>
+            </View>
+            <Button label="重试连接" onPress={refresh} variant="secondary" />
+          </Card>
+        ) : null}
 
         {activeTab === "rewards" ? (
         <Card style={styles.compliancePanel}>
@@ -262,7 +274,7 @@ export default function App() {
             <View style={styles.sectionCopy}>
               <AppText variant="heading">成长金余额</AppText>
               <AppText color="textSecondary" variant="caption">
-                今日已赚 {demoVirtualBalance.todayEarnedAmount.toLocaleString("zh-CN")} / {demoVirtualBalance.dailyEarnLimitAmount.toLocaleString("zh-CN")}
+                今日已赚 {data.virtualBalance.todayEarnedAmount.toLocaleString("zh-CN")} / {data.virtualBalance.dailyEarnLimitAmount.toLocaleString("zh-CN")}
               </AppText>
             </View>
             <Badge label="流水推导" tone="success" />
@@ -270,15 +282,15 @@ export default function App() {
           <View style={styles.balanceBreakdown}>
             <View style={styles.balanceBucket}>
               <AppText color="textSecondary" variant="label">可用</AppText>
-              <AppText variant="bodyStrong">{demoVirtualBalance.availableAmount.toLocaleString("zh-CN")}</AppText>
+              <AppText variant="bodyStrong">{data.virtualBalance.availableAmount.toLocaleString("zh-CN")}</AppText>
             </View>
             <View style={styles.balanceBucket}>
               <AppText color="textSecondary" variant="label">已配置</AppText>
-              <AppText variant="bodyStrong">{demoVirtualBalance.allocatedAmount.toLocaleString("zh-CN")}</AppText>
+              <AppText variant="bodyStrong">{data.virtualBalance.allocatedAmount.toLocaleString("zh-CN")}</AppText>
             </View>
             <View style={styles.balanceBucket}>
               <AppText color="textSecondary" variant="label">冻结</AppText>
-              <AppText variant="bodyStrong">{demoVirtualBalance.frozenAmount.toLocaleString("zh-CN")}</AppText>
+              <AppText variant="bodyStrong">{data.virtualBalance.frozenAmount.toLocaleString("zh-CN")}</AppText>
             </View>
           </View>
           <View style={styles.ledgerList}>
@@ -326,7 +338,7 @@ export default function App() {
           <Button label="重置配置" onPress={handleResetAllocation} variant="ghost" />
 
           <View style={styles.productList}>
-            {demoSimulationProducts.map((product) => {
+            {data.simulationProducts.map((product) => {
               const allocation = getAllocationForProduct(product.id);
 
               return (
@@ -439,7 +451,7 @@ export default function App() {
             </View>
           ) : null}
 
-          <DisclosureBanner body={simulationRun?.disclosure ?? demoTenant.disclosureCopy.simulationNotice} title="学习周期提醒" />
+          <DisclosureBanner body={simulationRun?.disclosure ?? data.tenant.disclosureCopy.simulationNotice} title="学习周期提醒" />
           <AppText color="textSecondary" variant="caption">
             {simulationRun?.rewardCalculationBasis}
           </AppText>
@@ -509,7 +521,7 @@ export default function App() {
           </View>
         </Card>
 
-        <DisclosureBanner body={demoTenant.disclosureCopy.virtualBalanceNotice} title="资金性质提醒" />
+        <DisclosureBanner body={data.tenant.disclosureCopy.virtualBalanceNotice} title="资金性质提醒" />
         </>
         ) : null}
 
@@ -562,7 +574,7 @@ export default function App() {
               <View style={styles.sectionCopy}>
                 <AppText variant="bodyStrong">提现申请</AppText>
                 <AppText color="textSecondary" variant="caption">
-                  {rewardJar.withdrawalWindow.label} · {demoLinkedBankAccount.bankName} {demoLinkedBankAccount.accountNumberMasked}
+                  {rewardJar.withdrawalWindow.label} · {data.linkedBankAccount.bankName} {data.linkedBankAccount.accountNumberMasked}
                 </AppText>
               </View>
               <Badge label={canSubmitWithdrawal ? "可提交" : "需满足规则"} tone={canSubmitWithdrawal ? "success" : "learning"} />
@@ -708,6 +720,10 @@ const styles = StyleSheet.create({
   tabScreenContent: {
     gap: spacing.lg,
     paddingBottom: spacing.xxl
+  },
+  apiStatusPanel: {
+    alignItems: "flex-start",
+    gap: spacing.md
   },
   topBar: {
     alignItems: "center",
