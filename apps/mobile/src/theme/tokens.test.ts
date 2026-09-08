@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { colors, radius, spacing, touch, typography } from "./tokens";
+import { colors, icon, radius, spacing, touch, typography } from "./tokens";
 
 describe("mobile theme tokens", () => {
   it("keeps the documented bank reward palette stable", () => {
@@ -17,6 +17,8 @@ describe("mobile theme tokens", () => {
     expect(spacing.sm).toBe(8);
     expect(radius.sm).toBe(8);
     expect(typography.size.body).toBeGreaterThanOrEqual(16);
+    expect(icon.md).toBe(22);
+    expect(icon.lg).toBeGreaterThan(icon.md);
   });
 
   it("defines light and dark semantic surfaces for future theming", () => {

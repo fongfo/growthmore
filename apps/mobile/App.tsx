@@ -12,6 +12,7 @@ import {
   type TaskStatus
 } from "@growthmore/shared";
 import {
+  AppIcon,
   AppText,
   Badge,
   Button,
@@ -44,6 +45,7 @@ import {
   type Locale
 } from "./src/i18n";
 import { colors, spacing } from "./src/theme";
+import { type IconName } from "./src/components";
 
 const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
   available: "learning",
@@ -67,12 +69,12 @@ const rewardStatusTone: Record<RewardStatus, "default" | "success" | "learning" 
 
 type TabId = "today" | "earn" | "allocate" | "grow" | "rewards";
 
-const tabs: Array<{ id: TabId; labelKey: string }> = [
-  { id: "today", labelKey: "nav.today" },
-  { id: "earn", labelKey: "nav.earn" },
-  { id: "allocate", labelKey: "nav.allocate" },
-  { id: "grow", labelKey: "nav.grow" },
-  { id: "rewards", labelKey: "nav.rewards" }
+const tabs: Array<{ id: TabId; iconName: IconName; labelKey: string }> = [
+  { id: "today", iconName: "calendar-today", labelKey: "nav.today" },
+  { id: "earn", iconName: "clipboard-check-outline", labelKey: "nav.earn" },
+  { id: "allocate", iconName: "chart-donut", labelKey: "nav.allocate" },
+  { id: "grow", iconName: "trending-up", labelKey: "nav.grow" },
+  { id: "rewards", iconName: "gift-outline", labelKey: "nav.rewards" }
 ];
 const withdrawalStatusTone: Record<WithdrawalStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
   draft: "default",
@@ -83,6 +85,36 @@ const withdrawalStatusTone: Record<WithdrawalStatus, "default" | "success" | "le
   paid: "success",
   failed: "danger",
   cancelled: "default"
+};
+const taskStatusIcon: Record<TaskStatus, IconName> = {
+  available: "play-circle-outline",
+  in_progress: "progress-clock",
+  pending_verification: "clock-outline",
+  completed: "check-circle-outline",
+  claimed: "check-decagram-outline",
+  rejected: "alert-circle-outline",
+  reversed: "undo-variant"
+};
+
+const rewardStatusIcon: Record<RewardStatus, IconName> = {
+  pending: "clock-outline",
+  available: "gift-open-outline",
+  locked: "lock-outline",
+  withdrawal_pending: "bank-transfer-out",
+  paid: "check-circle-outline",
+  failed: "alert-circle-outline",
+  reversed: "undo-variant"
+};
+
+const withdrawalStatusIcon: Record<WithdrawalStatus, IconName> = {
+  draft: "file-document-outline",
+  submitted: "send-outline",
+  under_review: "shield-search",
+  approved: "check-circle-outline",
+  rejected: "alert-circle-outline",
+  paid: "bank-check",
+  failed: "alert-circle-outline",
+  cancelled: "close-circle-outline"
 };
 export default function App() {
   const { data, errorMessage, isFallback, refresh, status } = useMobileAppData();
@@ -163,7 +195,7 @@ export default function App() {
             <AppText variant="heading">Hi, {data.session.user.displayName}</AppText>
           </View>
           <View style={styles.topActions}>
-            <Badge label={status === "loading" ? t(locale, "api.status.loading") : isFallback ? t(locale, "api.status.demo") : t(locale, "api.status.connected")} tone={isFallback ? "learning" : "success"} />
+            <Badge iconName={status === "loading" ? "cloud-sync-outline" : isFallback ? "database-eye-outline" : "cloud-check-outline"} label={status === "loading" ? t(locale, "api.status.loading") : isFallback ? t(locale, "api.status.demo") : t(locale, "api.status.connected")} tone={isFallback ? "learning" : "success"} />
             <View accessibilityLabel={t(locale, "tabs.language")} style={styles.languageSwitch}>
               {localeOptions.map((option) => {
                 const selected = locale === option.value;
@@ -213,7 +245,7 @@ export default function App() {
                 {t(locale, "compliance.count", { accepted: complianceSummary.acceptedDisclosureCount, required: complianceSummary.requiredDisclosureCount })}
               </AppText>
             </View>
-            <Badge label={complianceSummary.pendingDisclosureCount === 0 ? t(locale, "badge.disclosuresMet") : t(locale, "badge.disclosuresPending")} tone={complianceSummary.pendingDisclosureCount === 0 ? "success" : "reward"} />
+            <Badge iconName={complianceSummary.pendingDisclosureCount === 0 ? "shield-check-outline" : "shield-alert-outline"} label={complianceSummary.pendingDisclosureCount === 0 ? t(locale, "badge.disclosuresMet") : t(locale, "badge.disclosuresPending")} tone={complianceSummary.pendingDisclosureCount === 0 ? "success" : "reward"} />
           </View>
 
           <View style={styles.complianceChecklist}>
@@ -224,7 +256,9 @@ export default function App() {
 
               return (
                 <View key={disclosure.id} style={styles.disclosureRow}>
-                  <View style={[styles.disclosureMarker, accepted ? styles.disclosureMarkerAccepted : styles.disclosureMarkerPending]} />
+                  <View style={[styles.disclosureMarker, accepted ? styles.disclosureMarkerAccepted : styles.disclosureMarkerPending]}>
+                    <AppIcon color={accepted ? "success" : "reward"} name={accepted ? "check" : "alert-outline"} size="xs" />
+                  </View>
                   <View style={styles.sectionCopy}>
                     <AppText variant="bodyStrong">{translateText(locale, disclosure.title)}</AppText>
                     <AppText color="textSecondary" variant="caption">
@@ -232,7 +266,7 @@ export default function App() {
                     </AppText>
                     <AppText color="textSecondary" variant="caption">{translateText(locale, disclosure.body)}</AppText>
                   </View>
-                  <Badge label={accepted ? t(locale, "badge.confirmed") : t(locale, "badge.notConfirmed")} tone={accepted ? "success" : "reward"} />
+                  <Badge iconName={accepted ? "check-circle-outline" : "clock-outline"} label={accepted ? t(locale, "badge.confirmed") : t(locale, "badge.notConfirmed")} tone={accepted ? "success" : "reward"} />
                 </View>
               );
             })}
@@ -269,7 +303,7 @@ export default function App() {
               </AppText>
               <AppText variant="title">{locale === "en-US" ? "Steady Growth Plan" : home.level.planName}</AppText>
             </View>
-            <Badge label={home.level.label} tone="learning" />
+            <Badge iconName="seed-outline" label={home.level.label} tone="learning" />
           </View>
           <AppText color="textSecondary" variant="body">
             {t(locale, "today.progress", { percent: progressPercent, count: home.level.remainingTaskCount })}
@@ -279,8 +313,8 @@ export default function App() {
         </Card>
 
         <View style={styles.metrics}>
-          <MetricCard badge={t(locale, "metric.virtual.badge")} helper={t(locale, "metric.virtual.helper")} label={t(locale, "metric.virtual.label")} value={virtualGrowthAmount} />
-          <MetricCard helper={t(locale, "metric.reward.helper")} label={t(locale, "metric.reward.label")} value={rewardJarAmount} />
+          <MetricCard badge={t(locale, "metric.virtual.badge")} helper={t(locale, "metric.virtual.helper")} iconName="sprout-outline" label={t(locale, "metric.virtual.label")} value={virtualGrowthAmount} />
+          <MetricCard helper={t(locale, "metric.reward.helper")} iconName="gift-outline" label={t(locale, "metric.reward.label")} value={rewardJarAmount} />
         </View>
         <Card style={styles.balancePanel}>
           <View style={styles.sectionHeader}>
@@ -290,7 +324,7 @@ export default function App() {
                 {t(locale, "today.earned", { earned: formatInteger(locale, data.virtualBalance.todayEarnedAmount), limit: formatInteger(locale, data.virtualBalance.dailyEarnLimitAmount) })}
               </AppText>
             </View>
-            <Badge label={t(locale, "badge.allocationLedger")} tone="success" />
+            <Badge iconName="book-check-outline" label={t(locale, "badge.allocationLedger")} tone="success" />
           </View>
           <View style={styles.balanceBreakdown}>
             <View style={styles.balanceBucket}>
@@ -336,7 +370,7 @@ export default function App() {
                 {t(locale, "portfolio.unallocated", { amount: formatInteger(locale, allocationDraft.unallocatedAmount) })}
               </AppText>
             </View>
-            <Badge label={translateRiskLabel(locale, allocationDraft.riskLabel)} tone="learning" />
+            <Badge iconName="shield-half-full" label={translateRiskLabel(locale, allocationDraft.riskLabel)} tone="learning" />
           </View>
 
           <View style={styles.riskTrack} accessibilityLabel={t(locale, "portfolio.riskA11y", { score: allocationDraft.riskScore })}>
@@ -363,7 +397,7 @@ export default function App() {
                         {product.userLabel} · {product.volatilityLabel} · {product.learningGoal}
                       </AppText>
                     </View>
-                    <Badge label={product.riskLabel} tone={product.riskLevel === "medium_high" ? "danger" : "learning"} />
+                    <Badge iconName={product.riskLevel === "medium_high" ? "alert-circle-outline" : "shield-outline"} label={product.riskLabel} tone={product.riskLevel === "medium_high" ? "danger" : "learning"} />
                   </View>
                   <View style={styles.allocationTrack}>
                     <View style={[styles.allocationFill, { width: `${allocation.percent}%` }]} />
@@ -401,7 +435,7 @@ export default function App() {
                 {t(locale, "run.prompt")}
               </AppText>
             </View>
-            <Badge label={reflectionComplete ? t(locale, "badge.reflectionDone") : t(locale, "badge.reflectionPending")} tone={reflectionComplete ? "success" : "reward"} />
+            <Badge iconName={reflectionComplete ? "check-circle-outline" : "comment-question-outline"} label={reflectionComplete ? t(locale, "badge.reflectionDone") : t(locale, "badge.reflectionPending")} tone={reflectionComplete ? "success" : "reward"} />
           </View>
 
           <View style={styles.runSummary}>
@@ -426,6 +460,7 @@ export default function App() {
                   <View style={styles.taskRowHeader}>
                     <AppText variant="bodyStrong">{result.productName}</AppText>
                     <View style={[styles.changePill, result.simulatedChangeAmount < 0 ? styles.changePillDown : styles.changePillUp]}>
+                      <AppIcon color={result.simulatedChangeAmount < 0 ? "danger" : "success"} name={result.simulatedChangeAmount < 0 ? "trending-down" : "trending-up"} size="xs" />
                       <AppText color={result.simulatedChangeAmount < 0 ? "danger" : "success"} variant="label">
                         {formatSignedPercent(result.simulatedChangePercent)}
                       </AppText>
@@ -457,7 +492,7 @@ export default function App() {
             <View style={styles.confirmationList}>
               {localizedSimulationRun.riskConfirmationStatements.map((statement) => (
                 <View key={statement} style={styles.confirmationItem}>
-                  <View style={styles.confirmationDot} />
+                  <AppIcon color="danger" name="shield-alert-outline" size="sm" />
                   <AppText color="textSecondary" variant="caption">{statement}</AppText>
                 </View>
               ))}
@@ -482,7 +517,7 @@ export default function App() {
                 {t(locale, "earn.summary", { days: taskBoard.completionStreakDays, growth: todayAvailableGrowthAmount, reward: todayAvailableRewardAmount })}
               </AppText>
             </View>
-            <Badge label={t(locale, "label.rewardTaskCount", { count: taskBoard.totalTaskCount })} tone="learning" />
+            <Badge iconName="clipboard-list-outline" label={t(locale, "label.rewardTaskCount", { count: taskBoard.totalTaskCount })} tone="learning" />
           </View>
 
           <View style={styles.filterRow}>
@@ -509,7 +544,7 @@ export default function App() {
                         {task.description}
                       </AppText>
                     </View>
-                    <Badge label={statusCopy.label} tone={statusToneByStatus[task.status]} />
+                    <Badge iconName={taskStatusIcon[task.status]} label={statusCopy.label} tone={statusToneByStatus[task.status]} />
                   </View>
                   <View style={styles.taskMetaRow}>
                     <AppText color="textSecondary" variant="caption">
@@ -547,7 +582,7 @@ export default function App() {
                 {t(locale, "rewards.intro")}
               </AppText>
             </View>
-            <Badge label={getRewardStatusLabel(locale, "available")} tone="success" />
+            <Badge iconName={rewardStatusIcon.available} label={getRewardStatusLabel(locale, "available")} tone="success" />
           </View>
 
           <View style={styles.rewardHero}>
@@ -558,7 +593,7 @@ export default function App() {
                 {t(locale, "label.availableReward", { amount: formatCurrency(locale, rewardJar.availableAmount), minimum: formatCurrency(locale, rewardJar.minimumWithdrawalAmount) })}
               </AppText>
             </View>
-            <Badge label={rewardJar.withdrawalWindow.status === "open" ? t(locale, "badge.withdrawalOpen") : t(locale, "badge.withdrawalClosed")} tone={rewardJar.withdrawalWindow.status === "open" ? "success" : "learning"} />
+            <Badge iconName={rewardJar.withdrawalWindow.status === "open" ? "calendar-check-outline" : "calendar-clock-outline"} label={rewardJar.withdrawalWindow.status === "open" ? t(locale, "badge.withdrawalOpen") : t(locale, "badge.withdrawalClosed")} tone={rewardJar.withdrawalWindow.status === "open" ? "success" : "learning"} />
           </View>
 
           <View style={styles.rewardBreakdown}>
@@ -590,7 +625,7 @@ export default function App() {
                   {translateText(locale, rewardJar.withdrawalWindow.label) ?? rewardJar.withdrawalWindow.label} · {data.linkedBankAccount.bankName} {data.linkedBankAccount.accountNumberMasked}
                 </AppText>
               </View>
-              <Badge label={canSubmitWithdrawal ? t(locale, "badge.canSubmit") : t(locale, "badge.ruleRequired")} tone={canSubmitWithdrawal ? "success" : "learning"} />
+              <Badge iconName={canSubmitWithdrawal ? "bank-check" : "clipboard-alert-outline"} label={canSubmitWithdrawal ? t(locale, "badge.canSubmit") : t(locale, "badge.ruleRequired")} tone={canSubmitWithdrawal ? "success" : "learning"} />
             </View>
             <View style={styles.withdrawalSummaryRow}>
               <View style={styles.sectionCopy}>
@@ -620,7 +655,7 @@ export default function App() {
                       <AppText color="danger" variant="caption">{translateText(locale, withdrawal.rejectionReason ?? withdrawal.failureReason)}</AppText>
                     ) : null}
                   </View>
-                  <Badge label={getWithdrawalStatusLabel(locale, withdrawal.status)} tone={withdrawalStatusTone[withdrawal.status]} />
+                  <Badge iconName={withdrawalStatusIcon[withdrawal.status]} label={getWithdrawalStatusLabel(locale, withdrawal.status)} tone={withdrawalStatusTone[withdrawal.status]} />
                 </View>
               ))}
             </View>
@@ -641,7 +676,7 @@ export default function App() {
                   <AppText color={entry.status === "reversed" ? "danger" : "success"} variant="label">
                     {formatCurrency(locale, entry.amount)}
                   </AppText>
-                  <Badge label={getRewardStatusLabel(locale, entry.status)} tone={rewardStatusTone[entry.status]} />
+                  <Badge iconName={rewardStatusIcon[entry.status]} label={getRewardStatusLabel(locale, entry.status)} tone={rewardStatusTone[entry.status]} />
                 </View>
               </View>
             ))}
@@ -670,7 +705,9 @@ export default function App() {
                   pressed ? styles.tabItemPressed : undefined
                 ]}
               >
-                <View style={[styles.tabIndicator, selected ? styles.tabIndicatorActive : undefined]} />
+                <View style={[styles.tabIconShell, selected ? styles.tabIconShellActive : undefined]}>
+                  <AppIcon color={selected ? "primary" : "textSecondary"} name={tab.iconName} size="sm" />
+                </View>
                 <AppText color={selected ? "primary" : "textSecondary"} variant="caption">
                   {t(locale, tab.labelKey)}
                 </AppText>
@@ -720,15 +757,15 @@ const styles = StyleSheet.create({
   tabItemPressed: {
     opacity: 0.72
   },
-  tabIndicator: {
-    backgroundColor: colors.light.borderStrong,
+  tabIconShell: {
+    alignItems: "center",
     borderRadius: 999,
-    height: 4,
-    width: 18
+    height: 28,
+    justifyContent: "center",
+    width: 36
   },
-  tabIndicatorActive: {
-    backgroundColor: colors.light.primary,
-    width: 28
+  tabIconShellActive: {
+    backgroundColor: colors.light.learningSoft
   },
   tabScreenContent: {
     gap: spacing.lg,
@@ -788,10 +825,12 @@ const styles = StyleSheet.create({
     padding: spacing.md
   },
   disclosureMarker: {
-    borderRadius: 6,
-    height: 12,
-    marginTop: 4,
-    width: 12
+    alignItems: "center",
+    borderRadius: 999,
+    height: 24,
+    justifyContent: "center",
+    marginTop: 2,
+    width: 24
   },
   disclosureMarkerAccepted: {
     backgroundColor: colors.light.success
@@ -919,6 +958,9 @@ const styles = StyleSheet.create({
     padding: spacing.md
   },
   changePill: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
     borderRadius: 999,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs
