@@ -2,6 +2,7 @@ export * from "./Badge";
 export * from "./Button";
 export * from "./Card";
 export * from "./DisclosureBanner";
+export * from "./Icon";
 export * from "./MetricCard";
 export * from "./ProgressBar";
 export * from "./Screen";

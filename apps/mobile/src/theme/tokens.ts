@@ -137,6 +137,13 @@ export const touch = {
   gap: 8
 } as const;
 
+export const icon = {
+  xs: 14,
+  sm: 18,
+  md: 22,
+  lg: 28
+} as const;
+
 export const motion = {
   quick: 150,
   standard: 220,
@@ -150,5 +157,6 @@ export const theme = {
   typography,
   shadows,
   touch,
+  icon,
   motion
 } as const;
