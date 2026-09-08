@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData } from "./mobileAppData";
+import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, railwayApiBaseUrl } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -11,6 +11,10 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 }
 
 describe("mobile API data loader", () => {
+  it("defaults preview builds to the Railway API", () => {
+    expect(defaultApiBaseUrl).toBe(railwayApiBaseUrl);
+  });
+
   it("loads the mobile app aggregate from the Growthmore API", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
