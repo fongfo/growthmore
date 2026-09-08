@@ -4,9 +4,7 @@ import { Pressable, SafeAreaView, StyleSheet, View } from "react-native";
 import {
   createSimulationAllocationDraft,
   createSimulationCycleRun,
-  taskStatusCopy,
   validateWithdrawalRequest,
-  type DisclosureType,
   type SimulationAllocation,
   type SimulationCycleRun,
   type RewardStatus,
@@ -25,15 +23,27 @@ import {
 } from "./src/components";
 import { fallbackMobileAppData } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
+import {
+  formatCurrency,
+  formatInteger,
+  formatSignedAmount,
+  formatSignedPercent,
+  getDisclosureTypeLabel,
+  getRewardStatusLabel,
+  getTaskStatusCopy,
+  getWithdrawalStatusLabel,
+  localeOptions,
+  t,
+  translateAllocationExample,
+  translateProduct,
+  translateRiskLabel,
+  translateSimulationRun,
+  translateTask,
+  translateTaskFilter,
+  translateText,
+  type Locale
+} from "./src/i18n";
 import { colors, spacing } from "./src/theme";
-
-const disclosureTypeCopy: Record<DisclosureType, string> = {
-  virtual_balance: "虚拟成长金",
-  simulation: "模拟学习",
-  reward_rule: "奖励规则",
-  withdrawal: "提现规则",
-  real_product_redirect: "真实产品"
-};
 
 const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
   available: "learning",
@@ -43,16 +53,6 @@ const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" 
   claimed: "success",
   rejected: "danger",
   reversed: "danger"
-};
-
-const rewardStatusCopy: Record<RewardStatus, string> = {
-  pending: "待校验",
-  available: "可领取",
-  locked: "暂锁定",
-  withdrawal_pending: "提现中",
-  paid: "已到账",
-  failed: "发放失败",
-  reversed: "已撤销"
 };
 
 const rewardStatusTone: Record<RewardStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
@@ -65,25 +65,14 @@ const rewardStatusTone: Record<RewardStatus, "default" | "success" | "learning" 
   reversed: "danger"
 };
 
-const withdrawalStatusCopy: Record<WithdrawalStatus, string> = {
-  draft: "草稿",
-  submitted: "已提交",
-  under_review: "审核中",
-  approved: "已通过",
-  rejected: "未通过",
-  paid: "已到账",
-  failed: "处理失败",
-  cancelled: "已取消"
-};
-
 type TabId = "today" | "earn" | "allocate" | "grow" | "rewards";
 
-const tabs: Array<{ id: TabId; label: string }> = [
-  { id: "today", label: "今日" },
-  { id: "earn", label: "任务" },
-  { id: "allocate", label: "配置" },
-  { id: "grow", label: "成长" },
-  { id: "rewards", label: "奖励" }
+const tabs: Array<{ id: TabId; labelKey: string }> = [
+  { id: "today", labelKey: "nav.today" },
+  { id: "earn", labelKey: "nav.earn" },
+  { id: "allocate", labelKey: "nav.allocate" },
+  { id: "grow", labelKey: "nav.grow" },
+  { id: "rewards", labelKey: "nav.rewards" }
 ];
 const withdrawalStatusTone: Record<WithdrawalStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
   draft: "default",
@@ -99,6 +88,7 @@ export default function App() {
   const { data, errorMessage, isFallback, refresh, status } = useMobileAppData();
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [allocationDraft, setAllocationDraft] = useState(fallbackMobileAppData.allocationDraft);
+  const [locale, setLocale] = useState<Locale>("zh-CN");
   const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(fallbackMobileAppData.simulationRun);
   const [reflectionComplete, setReflectionComplete] = useState(false);
 
@@ -110,11 +100,11 @@ export default function App() {
 
   const home = data.home;
   const taskBoard = data.taskBoard;
-  const taskList = data.tasks.slice(0, 5);
+  const taskList = data.tasks.slice(0, 5).map((task) => translateTask(locale, task));
   const recentLedger = data.virtualBalanceLedger.slice(-3).reverse();
   const progressPercent = Math.round(home.level.progressPercent * 100);
-  const virtualGrowthAmount = data.virtualBalance.availableAmount.toLocaleString("zh-CN");
-  const rewardJarAmount = `¥${home.balances.rewardJarAmount.toFixed(2)}`;
+  const virtualGrowthAmount = formatInteger(locale, data.virtualBalance.availableAmount);
+  const rewardJarAmount = formatCurrency(locale, home.balances.rewardJarAmount);
   const rewardJar = data.rewardJar;
   const recentRewardLedger = data.rewardLedger.slice(0, 4);
   const withdrawalRequests = data.withdrawals.slice(0, 3);
@@ -122,8 +112,11 @@ export default function App() {
   const canSubmitWithdrawal = withdrawalErrors.length === 0;
   const complianceSummary = data.complianceSummary;
   const complianceAuditLogs = complianceSummary.latestAuditLogs.slice(0, 3);
-  const todayAvailableGrowthAmount = taskBoard.todayAvailableVirtualGrowthAmount.toLocaleString("zh-CN");
-  const todayAvailableRewardAmount = `¥${taskBoard.todayAvailableRewardJarAmount.toFixed(2)}`;
+  const todayAvailableGrowthAmount = formatInteger(locale, taskBoard.todayAvailableVirtualGrowthAmount);
+  const todayAvailableRewardAmount = formatCurrency(locale, taskBoard.todayAvailableRewardJarAmount);
+  const localizedAllocationExamples = allocationDraft.examples.map((example) => translateAllocationExample(locale, example));
+  const localizedSimulationProducts = data.simulationProducts.map((product) => translateProduct(locale, product));
+  const localizedSimulationRun = simulationRun ? translateSimulationRun(locale, simulationRun) : null;
 
   const handleApplyExample = (exampleId: string) => {
     const example = allocationDraft.examples.find((item) => item.id === exampleId);
@@ -169,25 +162,45 @@ export default function App() {
             </AppText>
             <AppText variant="heading">Hi, {data.session.user.displayName}</AppText>
           </View>
-          <Badge label={status === "loading" ? "连接中" : isFallback ? "演示数据" : "API 已连接"} tone={isFallback ? "learning" : "success"} />
+          <View style={styles.topActions}>
+            <Badge label={status === "loading" ? t(locale, "api.status.loading") : isFallback ? t(locale, "api.status.demo") : t(locale, "api.status.connected")} tone={isFallback ? "learning" : "success"} />
+            <View accessibilityLabel={t(locale, "tabs.language")} style={styles.languageSwitch}>
+              {localeOptions.map((option) => {
+                const selected = locale === option.value;
+
+                return (
+                  <Pressable
+                    accessibilityLabel={option.label}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={option.value}
+                    onPress={() => setLocale(option.value)}
+                    style={[styles.languageOption, selected ? styles.languageOptionActive : undefined]}
+                  >
+                    <AppText color={selected ? "inverseText" : "textSecondary"} variant="label">{option.label}</AppText>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
         </View>
 
         {status === "loading" ? (
           <Card style={styles.apiStatusPanel}>
-            <AppText variant="bodyStrong">正在连接 API 数据</AppText>
-            <AppText color="textSecondary" variant="caption">移动端会优先读取本地 Growthmore API。</AppText>
+            <AppText variant="bodyStrong">{t(locale, "api.loading.title")}</AppText>
+            <AppText color="textSecondary" variant="caption">{t(locale, "api.loading.body")}</AppText>
           </Card>
         ) : null}
 
         {status === "error" ? (
           <Card style={styles.apiStatusPanel}>
             <View style={styles.sectionCopy}>
-              <AppText variant="bodyStrong">当前使用演示数据</AppText>
+              <AppText variant="bodyStrong">{t(locale, "api.error.title")}</AppText>
               <AppText color="textSecondary" variant="caption">
-                API 暂时不可用，页面已自动回退到内置 Demo 数据。{errorMessage ? ` ${errorMessage}` : ""}
+                {t(locale, "api.error.body", { error: errorMessage ? ` ${errorMessage}` : "" })}
               </AppText>
             </View>
-            <Button label="重试连接" onPress={refresh} variant="secondary" />
+            <Button label={t(locale, "action.retryConnection")} onPress={refresh} variant="secondary" />
           </Card>
         ) : null}
 
@@ -195,12 +208,12 @@ export default function App() {
         <Card style={styles.compliancePanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">必要披露与确认</AppText>
+              <AppText variant="heading">{t(locale, "compliance.heading")}</AppText>
               <AppText color="textSecondary" variant="caption">
-                已确认 {complianceSummary.acceptedDisclosureCount} / {complianceSummary.requiredDisclosureCount} 个提现前必要披露
+                {t(locale, "compliance.count", { accepted: complianceSummary.acceptedDisclosureCount, required: complianceSummary.requiredDisclosureCount })}
               </AppText>
             </View>
-            <Badge label={complianceSummary.pendingDisclosureCount === 0 ? "已满足" : "待确认"} tone={complianceSummary.pendingDisclosureCount === 0 ? "success" : "reward"} />
+            <Badge label={complianceSummary.pendingDisclosureCount === 0 ? t(locale, "badge.disclosuresMet") : t(locale, "badge.disclosuresPending")} tone={complianceSummary.pendingDisclosureCount === 0 ? "success" : "reward"} />
           </View>
 
           <View style={styles.complianceChecklist}>
@@ -213,13 +226,13 @@ export default function App() {
                 <View key={disclosure.id} style={styles.disclosureRow}>
                   <View style={[styles.disclosureMarker, accepted ? styles.disclosureMarkerAccepted : styles.disclosureMarkerPending]} />
                   <View style={styles.sectionCopy}>
-                    <AppText variant="bodyStrong">{disclosure.title}</AppText>
+                    <AppText variant="bodyStrong">{translateText(locale, disclosure.title)}</AppText>
                     <AppText color="textSecondary" variant="caption">
-                      {disclosureTypeCopy[disclosure.type]} · {disclosure.version}
+                      {getDisclosureTypeLabel(locale, disclosure.type)} · {disclosure.version}
                     </AppText>
-                    <AppText color="textSecondary" variant="caption">{disclosure.body}</AppText>
+                    <AppText color="textSecondary" variant="caption">{translateText(locale, disclosure.body)}</AppText>
                   </View>
-                  <Badge label={accepted ? "已确认" : "未确认"} tone={accepted ? "success" : "reward"} />
+                  <Badge label={accepted ? t(locale, "badge.confirmed") : t(locale, "badge.notConfirmed")} tone={accepted ? "success" : "reward"} />
                 </View>
               );
             })}
@@ -229,7 +242,7 @@ export default function App() {
             {complianceAuditLogs.map((log) => (
               <View key={log.id} style={styles.auditRow}>
                 <View style={styles.sectionCopy}>
-                  <AppText variant="bodyStrong">{log.summary}</AppText>
+                  <AppText variant="bodyStrong">{translateText(locale, log.summary)}</AppText>
                   <AppText color="textSecondary" variant="caption">
                     {log.action} · {log.actorType} · {log.occurredAt.slice(0, 10)}
                   </AppText>
@@ -240,7 +253,7 @@ export default function App() {
 
           <Button
             disabled={complianceSummary.pendingDisclosureCount === 0}
-            label={complianceSummary.pendingDisclosureCount === 0 ? "必要披露已确认" : "确认必要披露"}
+            label={complianceSummary.pendingDisclosureCount === 0 ? t(locale, "action.disclosuresConfirmed") : t(locale, "action.confirmDisclosures")}
             variant={complianceSummary.pendingDisclosureCount === 0 ? "secondary" : "primary"}
           />
         </Card>
@@ -254,56 +267,56 @@ export default function App() {
               <AppText color="primary" variant="eyebrow">
                 Today
               </AppText>
-              <AppText variant="title">{home.level.planName}</AppText>
+              <AppText variant="title">{locale === "en-US" ? "Steady Growth Plan" : home.level.planName}</AppText>
             </View>
             <Badge label={home.level.label} tone="learning" />
           </View>
           <AppText color="textSecondary" variant="body">
-            计划进度 {progressPercent}%，今天还剩 {home.level.remainingTaskCount} 个任务。
+            {t(locale, "today.progress", { percent: progressPercent, count: home.level.remainingTaskCount })}
           </AppText>
-          <ProgressBar accessibilityLabel={`当前计划进度 ${progressPercent}%`} value={home.level.progressPercent} />
-          <Button label="开始今日任务" onPress={() => setActiveTab("earn")} />
+          <ProgressBar accessibilityLabel={t(locale, "a11y.planProgress", { percent: progressPercent })} value={home.level.progressPercent} />
+          <Button label={t(locale, "action.startTodayTask")} onPress={() => setActiveTab("earn")} />
         </Card>
 
         <View style={styles.metrics}>
-          <MetricCard badge="可用" helper="不可直接提现" label="虚拟成长金" value={virtualGrowthAmount} />
-          <MetricCard helper="满足活动规则后可申请领取" label="奖励罐" value={rewardJarAmount} />
+          <MetricCard badge={t(locale, "metric.virtual.badge")} helper={t(locale, "metric.virtual.helper")} label={t(locale, "metric.virtual.label")} value={virtualGrowthAmount} />
+          <MetricCard helper={t(locale, "metric.reward.helper")} label={t(locale, "metric.reward.label")} value={rewardJarAmount} />
         </View>
         <Card style={styles.balancePanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">成长金余额</AppText>
+              <AppText variant="heading">{t(locale, "today.balanceHeading")}</AppText>
               <AppText color="textSecondary" variant="caption">
-                今日已赚 {data.virtualBalance.todayEarnedAmount.toLocaleString("zh-CN")} / {data.virtualBalance.dailyEarnLimitAmount.toLocaleString("zh-CN")}
+                {t(locale, "today.earned", { earned: formatInteger(locale, data.virtualBalance.todayEarnedAmount), limit: formatInteger(locale, data.virtualBalance.dailyEarnLimitAmount) })}
               </AppText>
             </View>
-            <Badge label="流水推导" tone="success" />
+            <Badge label={t(locale, "badge.allocationLedger")} tone="success" />
           </View>
           <View style={styles.balanceBreakdown}>
             <View style={styles.balanceBucket}>
-              <AppText color="textSecondary" variant="label">可用</AppText>
-              <AppText variant="bodyStrong">{data.virtualBalance.availableAmount.toLocaleString("zh-CN")}</AppText>
+              <AppText color="textSecondary" variant="label">{t(locale, "label.available")}</AppText>
+              <AppText variant="bodyStrong">{formatInteger(locale, data.virtualBalance.availableAmount)}</AppText>
             </View>
             <View style={styles.balanceBucket}>
-              <AppText color="textSecondary" variant="label">已配置</AppText>
-              <AppText variant="bodyStrong">{data.virtualBalance.allocatedAmount.toLocaleString("zh-CN")}</AppText>
+              <AppText color="textSecondary" variant="label">{t(locale, "label.allocated")}</AppText>
+              <AppText variant="bodyStrong">{formatInteger(locale, data.virtualBalance.allocatedAmount)}</AppText>
             </View>
             <View style={styles.balanceBucket}>
-              <AppText color="textSecondary" variant="label">冻结</AppText>
-              <AppText variant="bodyStrong">{data.virtualBalance.frozenAmount.toLocaleString("zh-CN")}</AppText>
+              <AppText color="textSecondary" variant="label">{t(locale, "label.frozen")}</AppText>
+              <AppText variant="bodyStrong">{formatInteger(locale, data.virtualBalance.frozenAmount)}</AppText>
             </View>
           </View>
           <View style={styles.ledgerList}>
             {recentLedger.map((entry) => (
               <View key={entry.id} style={styles.ledgerRow}>
                 <View style={styles.sectionCopy}>
-                  <AppText variant="bodyStrong">{entry.description}</AppText>
+                  <AppText variant="bodyStrong">{translateText(locale, entry.description)}</AppText>
                   <AppText color="textSecondary" variant="caption">
                     {entry.ruleVersion} · {entry.sourceType}
                   </AppText>
                 </View>
                 <AppText color={entry.entryType === "clawback" || entry.entryType === "freeze" ? "danger" : "success"} variant="label">
-                  {entry.entryType === "allocate" || entry.entryType === "freeze" || entry.entryType === "clawback" ? "-" : "+"}{entry.amount.toLocaleString("zh-CN")}
+                  {entry.entryType === "allocate" || entry.entryType === "freeze" || entry.entryType === "clawback" ? "-" : "+"}{formatInteger(locale, entry.amount)}
                 </AppText>
               </View>
             ))}
@@ -318,27 +331,27 @@ export default function App() {
         <Card style={styles.allocationPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">模拟配置</AppText>
+              <AppText variant="heading">{t(locale, "portfolio.heading")}</AppText>
               <AppText color="textSecondary" variant="caption">
-                未配置 {allocationDraft.unallocatedAmount.toLocaleString("zh-CN")} 成长金，只用于投资学习
+                {t(locale, "portfolio.unallocated", { amount: formatInteger(locale, allocationDraft.unallocatedAmount) })}
               </AppText>
             </View>
-            <Badge label={allocationDraft.riskLabel} tone="learning" />
+            <Badge label={translateRiskLabel(locale, allocationDraft.riskLabel)} tone="learning" />
           </View>
 
-          <View style={styles.riskTrack} accessibilityLabel={`组合风险分 ${allocationDraft.riskScore}`}>
+          <View style={styles.riskTrack} accessibilityLabel={t(locale, "portfolio.riskA11y", { score: allocationDraft.riskScore })}>
             <View style={[styles.riskFill, { width: `${Math.min(allocationDraft.riskScore * 25, 100)}%` }]} />
           </View>
 
           <View style={styles.exampleRow}>
-            {allocationDraft.examples.map((example) => (
+            {localizedAllocationExamples.map((example) => (
               <Button key={example.id} label={example.label} onPress={() => handleApplyExample(example.id)} style={styles.exampleButton} variant="secondary" />
             ))}
           </View>
-          <Button label="重置配置" onPress={handleResetAllocation} variant="ghost" />
+          <Button label={t(locale, "action.resetAllocation")} onPress={handleResetAllocation} variant="ghost" />
 
           <View style={styles.productList}>
-            {data.simulationProducts.map((product) => {
+            {localizedSimulationProducts.map((product) => {
               const allocation = getAllocationForProduct(product.id);
 
               return (
@@ -357,7 +370,7 @@ export default function App() {
                   </View>
                   <View style={styles.taskMetaRow}>
                     <AppText color="textSecondary" variant="caption">
-                      配置 {allocation.amount.toLocaleString("zh-CN")} 成长金
+                      {t(locale, "portfolio.allocationAmount", { amount: formatInteger(locale, allocation.amount) })}
                     </AppText>
                     <AppText color="textSecondary" variant="caption">
                       {allocation.percent}%
@@ -373,7 +386,7 @@ export default function App() {
 
           <View style={styles.riskConfirmBox}>
             <AppText color="textSecondary" variant="caption">
-              我知道这是模拟学习；高波动产品可能上涨也可能下跌；真实投资需要完成银行风险测评。
+              {t(locale, "portfolio.riskConfirm")}
             </AppText>
           </View>
         </Card>
@@ -383,43 +396,43 @@ export default function App() {
         <Card style={styles.learningPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">投资学习</AppText>
+              <AppText variant="heading">{t(locale, "run.heading")}</AppText>
               <AppText color="textSecondary" variant="caption">
-                运行一个学习周期，查看模拟变化并完成复盘确认
+                {t(locale, "run.prompt")}
               </AppText>
             </View>
-            <Badge label={reflectionComplete ? "已复盘" : "待复盘"} tone={reflectionComplete ? "success" : "reward"} />
+            <Badge label={reflectionComplete ? t(locale, "badge.reflectionDone") : t(locale, "badge.reflectionPending")} tone={reflectionComplete ? "success" : "reward"} />
           </View>
 
           <View style={styles.runSummary}>
             <View style={styles.sectionCopy}>
               <AppText color="textSecondary" variant="label">
-                {simulationRun?.cycleLabel ?? "当前学习周期"}
+                {localizedSimulationRun?.cycleLabel ?? t(locale, "label.currentCycle")}
               </AppText>
               <AppText variant="title">
-                {simulationRun ? `${simulationRun.simulatedChangeAmount >= 0 ? "+" : ""}${simulationRun.simulatedChangeAmount.toFixed(2)} 成长金` : "等待运行"}
+                {localizedSimulationRun ? t(locale, "run.virtualChange", { amount: formatSignedAmount(locale, localizedSimulationRun.simulatedChangeAmount) }) : t(locale, "run.waiting")}
               </AppText>
               <AppText color="textSecondary" variant="caption">
-                模拟变化 {simulationRun ? `${simulationRun.simulatedChangePercent >= 0 ? "+" : ""}${simulationRun.simulatedChangePercent.toFixed(2)}%` : "--"}，活动奖励 ¥{(simulationRun?.rewardActivityAmount ?? 0).toFixed(2)}
+                {t(locale, "run.changeSummary", { percent: localizedSimulationRun ? formatSignedPercent(localizedSimulationRun.simulatedChangePercent) : "--", reward: formatCurrency(locale, localizedSimulationRun?.rewardActivityAmount ?? 0) })}
               </AppText>
             </View>
-            <Button label="运行周期" onPress={handleRunLearningCycle} style={styles.runButton} />
+            <Button label={t(locale, "action.runCycle")} onPress={handleRunLearningCycle} style={styles.runButton} />
           </View>
 
           <View style={styles.resultList}>
-            {simulationRun?.productResults.map((result) => (
+            {localizedSimulationRun?.productResults.map((result) => (
               <View key={result.productId} style={styles.resultRow}>
                 <View style={styles.sectionCopy}>
                   <View style={styles.taskRowHeader}>
                     <AppText variant="bodyStrong">{result.productName}</AppText>
                     <View style={[styles.changePill, result.simulatedChangeAmount < 0 ? styles.changePillDown : styles.changePillUp]}>
                       <AppText color={result.simulatedChangeAmount < 0 ? "danger" : "success"} variant="label">
-                        {result.simulatedChangePercent >= 0 ? "+" : ""}{result.simulatedChangePercent.toFixed(2)}%
+                        {formatSignedPercent(result.simulatedChangePercent)}
                       </AppText>
                     </View>
                   </View>
                   <AppText color="textSecondary" variant="caption">
-                    {result.startingAmount.toLocaleString("zh-CN")} 至 {result.endingAmount.toLocaleString("zh-CN")} 成长金
+                    {formatInteger(locale, result.startingAmount)} {"->"} {formatInteger(locale, result.endingAmount)} {t(locale, "unit.virtualGrowth")}
                   </AppText>
                   <AppText color="textSecondary" variant="caption">
                     {result.explanation}
@@ -430,7 +443,7 @@ export default function App() {
           </View>
 
           <View style={styles.reflectionList}>
-            {simulationRun?.reflectionQuestions.map((question, index) => (
+            {localizedSimulationRun?.reflectionQuestions.map((question, index) => (
               <View key={question.id} style={styles.reflectionItem}>
                 <AppText variant="bodyStrong">{index + 1}. {question.prompt}</AppText>
                 <AppText color="textSecondary" variant="caption">
@@ -440,9 +453,9 @@ export default function App() {
             ))}
           </View>
 
-          {simulationRun?.riskConfirmationRequired ? (
+          {localizedSimulationRun?.riskConfirmationRequired ? (
             <View style={styles.confirmationList}>
-              {simulationRun.riskConfirmationStatements.map((statement) => (
+              {localizedSimulationRun.riskConfirmationStatements.map((statement) => (
                 <View key={statement} style={styles.confirmationItem}>
                   <View style={styles.confirmationDot} />
                   <AppText color="textSecondary" variant="caption">{statement}</AppText>
@@ -451,11 +464,11 @@ export default function App() {
             </View>
           ) : null}
 
-          <DisclosureBanner body={simulationRun?.disclosure ?? data.tenant.disclosureCopy.simulationNotice} title="学习周期提醒" />
+          <DisclosureBanner body={localizedSimulationRun?.disclosure ?? translateText(locale, data.tenant.disclosureCopy.simulationNotice) ?? data.tenant.disclosureCopy.simulationNotice} title={t(locale, "disclosure.run.title")} />
           <AppText color="textSecondary" variant="caption">
-            {simulationRun?.rewardCalculationBasis}
+            {localizedSimulationRun?.rewardCalculationBasis}
           </AppText>
-          <Button label={reflectionComplete ? "复盘已完成" : "完成复盘与风险确认"} onPress={handleCompleteReflection} variant={reflectionComplete ? "secondary" : "primary"} />
+          <Button label={reflectionComplete ? t(locale, "action.reflectionComplete") : t(locale, "action.completeReflection")} onPress={handleCompleteReflection} variant={reflectionComplete ? "secondary" : "primary"} />
         </Card>
         ) : null}
 
@@ -464,19 +477,19 @@ export default function App() {
         <Card style={styles.taskBoardPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">赚成长金</AppText>
+              <AppText variant="heading">{t(locale, "earn.heading")}</AppText>
               <AppText color="textSecondary" variant="caption">
-                连续完成 {taskBoard.completionStreakDays} 天，今日可赚 {todayAvailableGrowthAmount} 成长金和 {todayAvailableRewardAmount}
+                {t(locale, "earn.summary", { days: taskBoard.completionStreakDays, growth: todayAvailableGrowthAmount, reward: todayAvailableRewardAmount })}
               </AppText>
             </View>
-            <Badge label={`${taskBoard.totalTaskCount} 个任务`} tone="learning" />
+            <Badge label={t(locale, "label.rewardTaskCount", { count: taskBoard.totalTaskCount })} tone="learning" />
           </View>
 
           <View style={styles.filterRow}>
             {taskBoard.categoryFilters.map((filter) => (
               <View key={filter.id} style={styles.filterChip}>
                 <AppText color="primary" variant="label">
-                  {filter.label}
+                  {translateTaskFilter(locale, filter)}
                 </AppText>
               </View>
             ))}
@@ -484,7 +497,7 @@ export default function App() {
 
           <View style={styles.taskList}>
             {taskList.map((task) => {
-              const statusCopy = taskStatusCopy[task.status];
+              const statusCopy = getTaskStatusCopy(locale, task.status);
               const isPassiveState = task.status === "pending_verification" || task.status === "claimed" || task.status === "reversed";
 
               return (
@@ -500,11 +513,11 @@ export default function App() {
                   </View>
                   <View style={styles.taskMetaRow}>
                     <AppText color="textSecondary" variant="caption">
-                      +{task.reward.virtualGrowthAmount} 成长金
-                      {task.reward.rewardJarAmount > 0 ? `，+¥${task.reward.rewardJarAmount.toFixed(2)} 奖励罐` : ""}
+                      +{formatInteger(locale, task.reward.virtualGrowthAmount)} {t(locale, "unit.virtualGrowth")}
+                      {task.reward.rewardJarAmount > 0 ? `, +${formatCurrency(locale, task.reward.rewardJarAmount)} ${t(locale, "metric.reward.label")}` : ""}
                     </AppText>
                     <AppText color="textSecondary" variant="caption">
-                      {task.estimatedMinutes} 分钟
+                      {t(locale, "label.estimatedMinutes", { minutes: task.estimatedMinutes })}
                     </AppText>
                   </View>
                   {task.rejectionReason ? (
@@ -521,7 +534,7 @@ export default function App() {
           </View>
         </Card>
 
-        <DisclosureBanner body={data.tenant.disclosureCopy.virtualBalanceNotice} title="资金性质提醒" />
+        <DisclosureBanner body={translateText(locale, data.tenant.disclosureCopy.virtualBalanceNotice) ?? data.tenant.disclosureCopy.virtualBalanceNotice} title={t(locale, "disclosure.funds.title")} />
         </>
         ) : null}
 
@@ -529,85 +542,85 @@ export default function App() {
         <Card style={styles.rewardPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
-              <AppText variant="heading">奖励罐</AppText>
+              <AppText variant="heading">{t(locale, "rewards.heading")}</AppText>
               <AppText color="textSecondary" variant="caption">
-                真实奖励来自银行活动预算，按规则进入 reward_ledger
+                {t(locale, "rewards.intro")}
               </AppText>
             </View>
-            <Badge label={rewardStatusCopy.available} tone="success" />
+            <Badge label={getRewardStatusLabel(locale, "available")} tone="success" />
           </View>
 
           <View style={styles.rewardHero}>
             <View style={styles.sectionCopy}>
-              <AppText color="textSecondary" variant="label">奖励罐余额</AppText>
-              <AppText variant="title">¥{rewardJar.totalBalanceAmount.toFixed(2)}</AppText>
+              <AppText color="textSecondary" variant="label">{t(locale, "label.rewardJarBalance")}</AppText>
+              <AppText variant="title">{formatCurrency(locale, rewardJar.totalBalanceAmount)}</AppText>
               <AppText color="textSecondary" variant="caption">
-                可领取 ¥{rewardJar.availableAmount.toFixed(2)}，最低领取 ¥{rewardJar.minimumWithdrawalAmount.toFixed(2)}
+                {t(locale, "label.availableReward", { amount: formatCurrency(locale, rewardJar.availableAmount), minimum: formatCurrency(locale, rewardJar.minimumWithdrawalAmount) })}
               </AppText>
             </View>
-            <Badge label={rewardJar.withdrawalWindow.status === "open" ? "窗口开放" : "窗口未开放"} tone={rewardJar.withdrawalWindow.status === "open" ? "success" : "learning"} />
+            <Badge label={rewardJar.withdrawalWindow.status === "open" ? t(locale, "badge.withdrawalOpen") : t(locale, "badge.withdrawalClosed")} tone={rewardJar.withdrawalWindow.status === "open" ? "success" : "learning"} />
           </View>
 
           <View style={styles.rewardBreakdown}>
             <View style={styles.rewardBucket}>
-              <AppText color="textSecondary" variant="label">待校验</AppText>
-              <AppText variant="bodyStrong">¥{rewardJar.pendingAmount.toFixed(2)}</AppText>
+              <AppText color="textSecondary" variant="label">{t(locale, "label.pendingValidation")}</AppText>
+              <AppText variant="bodyStrong">{formatCurrency(locale, rewardJar.pendingAmount)}</AppText>
             </View>
             <View style={styles.rewardBucket}>
-              <AppText color="textSecondary" variant="label">锁定</AppText>
-              <AppText variant="bodyStrong">¥{rewardJar.lockedAmount.toFixed(2)}</AppText>
+              <AppText color="textSecondary" variant="label">{getRewardStatusLabel(locale, "locked")}</AppText>
+              <AppText variant="bodyStrong">{formatCurrency(locale, rewardJar.lockedAmount)}</AppText>
             </View>
             <View style={styles.rewardBucket}>
-              <AppText color="textSecondary" variant="label">本月预计</AppText>
-              <AppText variant="bodyStrong">¥{rewardJar.thisMonthEstimatedAmount.toFixed(2)}</AppText>
+              <AppText color="textSecondary" variant="label">{t(locale, "label.thisMonthEstimate")}</AppText>
+              <AppText variant="bodyStrong">{formatCurrency(locale, rewardJar.thisMonthEstimatedAmount)}</AppText>
             </View>
           </View>
 
           <View style={styles.rewardRuleBox}>
             <AppText color="textSecondary" variant="caption">
-              {rewardJar.rewardRuleSummary}
+              {translateText(locale, rewardJar.rewardRuleSummary)}
             </AppText>
           </View>
 
           <View style={styles.withdrawalBox}>
             <View style={styles.taskRowHeader}>
               <View style={styles.sectionCopy}>
-                <AppText variant="bodyStrong">提现申请</AppText>
+                <AppText variant="bodyStrong">{t(locale, "label.withdrawalRequest")}</AppText>
                 <AppText color="textSecondary" variant="caption">
-                  {rewardJar.withdrawalWindow.label} · {data.linkedBankAccount.bankName} {data.linkedBankAccount.accountNumberMasked}
+                  {translateText(locale, rewardJar.withdrawalWindow.label) ?? rewardJar.withdrawalWindow.label} · {data.linkedBankAccount.bankName} {data.linkedBankAccount.accountNumberMasked}
                 </AppText>
               </View>
-              <Badge label={canSubmitWithdrawal ? "可提交" : "需满足规则"} tone={canSubmitWithdrawal ? "success" : "learning"} />
+              <Badge label={canSubmitWithdrawal ? t(locale, "badge.canSubmit") : t(locale, "badge.ruleRequired")} tone={canSubmitWithdrawal ? "success" : "learning"} />
             </View>
             <View style={styles.withdrawalSummaryRow}>
               <View style={styles.sectionCopy}>
-                <AppText color="textSecondary" variant="label">可提现金额</AppText>
-                <AppText variant="title">¥{rewardJar.availableAmount.toFixed(2)}</AppText>
+                <AppText color="textSecondary" variant="label">{t(locale, "label.availableWithdrawal")}</AppText>
+                <AppText variant="title">{formatCurrency(locale, rewardJar.availableAmount)}</AppText>
               </View>
-              <Button disabled={!canSubmitWithdrawal} label="提交申请" style={styles.withdrawalButton} />
+              <Button disabled={!canSubmitWithdrawal} label={t(locale, "action.submitWithdrawal")} style={styles.withdrawalButton} />
             </View>
             {withdrawalErrors.length > 0 ? (
               <View style={styles.withdrawalReasonBox}>
                 {withdrawalErrors.map((error) => (
-                  <AppText key={error} color="textSecondary" variant="caption">{error}</AppText>
+                  <AppText key={error} color="textSecondary" variant="caption">{translateText(locale, error)}</AppText>
                 ))}
               </View>
             ) : (
-              <AppText color="textSecondary" variant="caption">审核通过后 T+1 入账；Demo MVP 不接真实打款。</AppText>
+              <AppText color="textSecondary" variant="caption">{t(locale, "rewards.reviewedArrival")}</AppText>
             )}
             <View style={styles.withdrawalList}>
               {withdrawalRequests.map((withdrawal) => (
                 <View key={withdrawal.id} style={styles.withdrawalRow}>
                   <View style={styles.sectionCopy}>
-                    <AppText variant="bodyStrong">¥{withdrawal.amount.toFixed(2)} 提现申请</AppText>
+                    <AppText variant="bodyStrong">{t(locale, "rewards.withdrawalTitle", { amount: formatCurrency(locale, withdrawal.amount) })}</AppText>
                     <AppText color="textSecondary" variant="caption">
-                      {withdrawal.estimatedArrivalLabel} · {withdrawal.withdrawalAccount.accountNumberMasked}
+                      {translateText(locale, withdrawal.estimatedArrivalLabel)} · {withdrawal.withdrawalAccount.accountNumberMasked}
                     </AppText>
                     {withdrawal.rejectionReason || withdrawal.failureReason ? (
-                      <AppText color="danger" variant="caption">{withdrawal.rejectionReason ?? withdrawal.failureReason}</AppText>
+                      <AppText color="danger" variant="caption">{translateText(locale, withdrawal.rejectionReason ?? withdrawal.failureReason)}</AppText>
                     ) : null}
                   </View>
-                  <Badge label={withdrawalStatusCopy[withdrawal.status]} tone={withdrawalStatusTone[withdrawal.status]} />
+                  <Badge label={getWithdrawalStatusLabel(locale, withdrawal.status)} tone={withdrawalStatusTone[withdrawal.status]} />
                 </View>
               ))}
             </View>
@@ -616,25 +629,25 @@ export default function App() {
             {recentRewardLedger.map((entry) => (
               <View key={entry.id} style={styles.rewardLedgerRow}>
                 <View style={styles.sectionCopy}>
-                  <AppText variant="bodyStrong">{entry.description}</AppText>
+                  <AppText variant="bodyStrong">{translateText(locale, entry.description)}</AppText>
                   <AppText color="textSecondary" variant="caption">
                     {entry.sourceType} · {entry.activityRuleVersion} · {entry.budgetBatchId}
                   </AppText>
                   {entry.lockReason ? (
-                    <AppText color="textSecondary" variant="caption">{entry.lockReason}</AppText>
+                    <AppText color="textSecondary" variant="caption">{translateText(locale, entry.lockReason)}</AppText>
                   ) : null}
                 </View>
                 <View style={styles.rewardLedgerAmount}>
                   <AppText color={entry.status === "reversed" ? "danger" : "success"} variant="label">
-                    ¥{entry.amount.toFixed(2)}
+                    {formatCurrency(locale, entry.amount)}
                   </AppText>
-                  <Badge label={rewardStatusCopy[entry.status]} tone={rewardStatusTone[entry.status]} />
+                  <Badge label={getRewardStatusLabel(locale, entry.status)} tone={rewardStatusTone[entry.status]} />
                 </View>
               </View>
             ))}
           </View>
 
-          <DisclosureBanner body={rewardJar.disclosure} title="奖励来源提醒" />
+          <DisclosureBanner body={translateText(locale, rewardJar.disclosure) ?? rewardJar.disclosure} title={t(locale, "disclosure.reward.title")} />
         </Card>
         ) : null}
         </Screen>
@@ -646,7 +659,7 @@ export default function App() {
 
             return (
               <Pressable
-                accessibilityLabel={`${tab.label}页面`}
+                accessibilityLabel={t(locale, "a11y.tabPage", { label: t(locale, tab.labelKey) })}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
                 key={tab.id}
@@ -659,7 +672,7 @@ export default function App() {
               >
                 <View style={[styles.tabIndicator, selected ? styles.tabIndicatorActive : undefined]} />
                 <AppText color={selected ? "primary" : "textSecondary"} variant="caption">
-                  {tab.label}
+                  {t(locale, tab.labelKey)}
                 </AppText>
               </Pressable>
             );
@@ -726,10 +739,34 @@ const styles = StyleSheet.create({
     gap: spacing.md
   },
   topBar: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.lg,
     justifyContent: "space-between"
+  },
+  topActions: {
+    alignItems: "flex-end",
+    gap: spacing.sm
+  },
+  languageSwitch: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderColor: colors.light.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    padding: 2
+  },
+  languageOption: {
+    alignItems: "center",
+    borderRadius: 999,
+    justifyContent: "center",
+    minHeight: 28,
+    minWidth: 44,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  languageOptionActive: {
+    backgroundColor: colors.light.primary
   },
   identityBlock: {
     flex: 1,
