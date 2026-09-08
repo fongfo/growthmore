@@ -31,15 +31,14 @@ import {
   type WithdrawalRequest
 } from "@growthmore/shared";
 
-declare const process:
-  | {
-      env?: {
-        EXPO_PUBLIC_API_BASE_URL?: string;
-      };
-    }
-  | undefined;
+declare const process: {
+  env: {
+    EXPO_PUBLIC_API_BASE_URL?: string;
+  };
+};
 
-export const defaultApiBaseUrl = process?.env?.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+export const railwayApiBaseUrl = "https://growthmore-production.up.railway.app";
+export const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || railwayApiBaseUrl;
 
 export type MobileAppData = {
   allocationDraft: SimulationAllocationDraft;
