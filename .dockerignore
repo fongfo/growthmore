@@ -1,0 +1,13 @@
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+apps/mobile/build
+coverage
+dist
+.expo
+.git
+.github
+.code-review-graph
+.agents
+.codex
+*.log
