@@ -1,7 +1,60 @@
+import { execFileSync, spawn } from "node:child_process";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
 
+
+describe("production server startup", () => {
+  it("starts from the compiled ESM output", async () => {
+    execFileSync("npm", ["run", "build"], {
+      cwd: process.cwd(),
+      shell: process.platform === "win32",
+      stdio: "pipe"
+    });
+
+    const server = spawn(process.execPath, ["dist/server.js"], {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        PORT: "0"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    const startupResult = await new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error("Compiled API server did not start in time.")), 5000);
+
+      server.stdout.on("data", (chunk: Buffer) => {
+        const output = chunk.toString();
+
+        if (output.includes("Growthmore API listening")) {
+          clearTimeout(timeout);
+          resolve(output);
+        }
+      });
+
+      server.stderr.on("data", (chunk: Buffer) => {
+        const output = chunk.toString();
+
+        if (output.includes("ERR_MODULE_NOT_FOUND")) {
+          clearTimeout(timeout);
+          reject(new Error(output));
+        }
+      });
+
+      server.on("exit", (code) => {
+        if (code !== null && code !== 0) {
+          clearTimeout(timeout);
+          reject(new Error(`Compiled API server exited with code ${code}.`));
+        }
+      });
+    });
+
+    server.kill();
+
+    expect(startupResult).toContain("Growthmore API listening");
+  }, 15000);
+});
 describe("api health", () => {
   it("returns service status", async () => {
     const response = await request(createApp()).get("/api/health");
