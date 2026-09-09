@@ -140,7 +140,7 @@ class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBounda
             <View style={styles.errorScreen}>
               <Card style={styles.apiStatusPanel}>
                 <View style={styles.sectionCopy}>
-                  <AppText variant="bodyStrong">App startup issue / 应用启动异常</AppText>
+                  <AppText variant="bodyStrong">App startup issue</AppText>
                   <AppText color="textSecondary" variant="caption">{this.state.errorMessage}</AppText>
                 </View>
               </Card>

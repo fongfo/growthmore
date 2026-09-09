@@ -221,7 +221,7 @@ const taskCopy: Record<string, Partial<Record<Locale, Pick<UserTask, "title" | "
 };
 
 const productCopy: Record<string, Partial<Record<Locale, Pick<SimulationProduct, "name" | "userLabel" | "riskLabel" | "volatilityLabel" | "learningGoal" | "simulationLogic">>>> = {
-  balanced_fund: {
+  "balanced-fund": {
     "en-US": {
       name: "Simulated Balanced Fund",
       userLabel: "Growth Mix",
@@ -241,7 +241,7 @@ const productCopy: Record<string, Partial<Record<Locale, Pick<SimulationProduct,
       simulationLogic: "Bond values can move when interest-rate assumptions change."
     }
   },
-  deposit: {
+  "term-deposit": {
     "en-US": {
       name: "Simulated Time Deposit",
       userLabel: "Stable",
@@ -255,13 +255,13 @@ const productCopy: Record<string, Partial<Record<Locale, Pick<SimulationProduct,
     "en-US": {
       name: "Simulated Gold",
       userLabel: "Hedge Asset",
-      riskLabel: "Medium Risk",
+      riskLabel: "Medium-High Risk",
       volatilityLabel: "Medium-high volatility",
       learningGoal: "Understand commodity volatility",
       simulationLogic: "Gold can rise or fall more sharply, showing commodity price swings."
     }
   },
-  money_market: {
+  "money-market": {
     "en-US": {
       name: "Simulated Money Market Fund",
       userLabel: "Flexible",
@@ -306,7 +306,35 @@ const exactEnglishCopy: Record<string, string> = {
   "金额不够最低领取门槛。": "Amount is below the minimum claim threshold.",
   "银行通道暂时不可用，可重试或转人工处理。": "The bank channel is temporarily unavailable. Retry or route to manual handling.",
   "风险分散任务活动奖励，已通过预算校验。": "Diversification task campaign reward passed budget validation.",
-  "高波动资产在模拟中波动更明显，配置前需确认理解风险。": "Higher-volatility assets move more in simulation. Confirm your risk understanding before allocating."
+  "高波动资产在模拟中波动更明显，配置前需确认理解风险。": "Higher-volatility assets move more in simulation. Confirm your risk understanding before allocating.",
+  "绑定提现账户 mock 获得成长金。": "Growth credits earned for linking the mock withdrawal account.",
+  "Demo 开户活动成长金调整流水。": "Demo onboarding campaign growth-credit adjustment.",
+  "复核确认部分重复领取，扣回冻结成长金。": "Review confirmed duplicate claims; frozen growth credits were clawed back.",
+  "配置成长金到稳健模拟组合。": "Growth credits allocated to a conservative simulation portfolio.",
+  "模拟组合释放未使用成长金。": "Unused growth credits were released from the simulation portfolio.",
+  "完成资料补全 mock 获得成长金。": "Growth credits earned for completing the profile mock.",
+  "异常频率触发复核，临时冻结部分成长金。": "Unusual activity triggered a review, temporarily freezing some growth credits.",
+  "虚拟成长金不是现金": "Growth Credits Are Not Cash",
+  "虚拟成长金只用于投资学习和模拟配置，不是存款、现金或真实可提现资产。": "Growth credits are only for investment learning and simulation allocation. They are not deposits, cash, or real withdrawable assets.",
+  "奖励罐金额来自银行活动预算、任务完成和活动资格，不是模拟投资收益或理财分红。": "Reward jar amounts come from the bank campaign budget, task completion, and campaign eligibility. They are not simulated investment gains or wealth-management dividends.",
+  "提现需审核且 Demo 不真实打款": "Withdrawals Require Review; Demo Does Not Pay Out",
+  "如果跳转真实基金、理财、黄金、证券或保险产品，必须完成银行风险测评、适当性和销售披露。": "If users continue to real funds, wealth-management products, gold, securities, or insurance, they must complete the bank's risk assessment, suitability process, and sales disclosures.",
+  "模拟定存本期小幅变化，用来理解期限和固定收益的稳定性。": "The simulated time deposit changed slightly this cycle, showing term-based fixed-income stability.",
+  "模拟货币基金本期变化较轻，重点观察流动性和低波动。": "The simulated money market fund moved lightly this cycle, highlighting liquidity and low volatility.",
+  "模拟债券本期受利率情景影响小幅下行，用来理解票息和价格波动。": "The simulated bond moved slightly down under the rate scenario, illustrating coupons and price movement.",
+  "模拟平衡基金通过分散配置抵消部分波动，用来理解组合管理。": "The simulated balanced fund offset part of the movement through diversification, illustrating portfolio management.",
+  "本期模拟变化仅用于解释资产波动，不代表真实表现。": "This cycle's simulated change only explains asset movement and does not represent real performance.",
+  "活动奖励按完成学习周期、复盘问题和风险确认计算，不使用模拟涨跌作为奖励因子。": "Campaign rewards are calculated from learning-cycle completion, reflection answers, and risk confirmation. Simulated gains or losses are not reward factors.",
+  "模拟涨跌只用于教育解释，不进入真实奖励计算。奖励金由银行活动预算提供，实际领取以活动规则和审核结果为准。": "Simulated gains and losses are only for education and are not used in real reward calculation. Rewards are funded by the bank campaign budget, with claiming subject to campaign rules and review results.",
+  "我知道这是模拟学习，不代表真实投资收益。": "I understand this is simulated learning and does not represent real investment returns.",
+  "我知道真实投资需要完成银行风险测评和产品适当性流程。": "I understand real investing requires the bank's risk assessment and product suitability process.",
+  "完成风险分散小课获得活动奖励。": "Campaign reward earned for completing the diversification lesson.",
+  "完成自动储蓄 mock 校验获得活动奖励。": "Campaign reward earned after completing the auto-savings mock verification.",
+  "9 月成长活动可领取奖励。": "September growth campaign reward is available to claim.",
+  "完成学习周期和复盘后产生的待校验活动奖励。": "Pending campaign reward generated after completing the learning cycle and reflection.",
+  "等待活动预算与风控校验。": "Waiting for campaign budget and risk-control validation.",
+  "本月提现窗口尚未开放。": "This month's withdrawal window is not open yet."
+
 };
 
 const runCopy = {
@@ -314,26 +342,37 @@ const runCopy = {
     "2026 年 8 月第 4 周学习周期": "Learning Cycle: Week 4, August 2026"
   },
   explanations: {
-    balanced_fund: "The balanced fund shows how a mixed allocation can smooth part of the portfolio movement.",
+    "balanced-fund": "The balanced fund shows how a mixed allocation can smooth part of the portfolio movement.",
     bond: "The bond simulation shows how rate assumptions and coupon learning affect a stable asset.",
-    deposit: "The time-deposit simulation changes slowly, highlighting term-based stability.",
+    "term-deposit": "The time-deposit simulation changes slowly, highlighting term-based stability.",
     gold: "Gold moved more this cycle, showing that commodity assets can rise or fall.",
-    money_market: "The money-market simulation stayed steady, highlighting liquidity and modest movement."
+    "money-market": "The money-market simulation stayed steady, highlighting liquidity and modest movement."
   },
   questions: {
     "highest-volatility": {
       prompt: "Which asset showed the highest volatility this cycle?",
       helperText: "Volatility is normal in simulation. The goal is to understand the risk source."
     },
-    "reward-source": {
-      prompt: "Why is the campaign reward separate from simulated performance?",
-      helperText: "Real rewards come from campaign rules and budget checks, not investment returns."
+    "allocation-lesson": {
+      prompt: "What did this portfolio allocation teach you?",
+      helperText: "You can note how diversification, low-volatility assets, or higher-volatility assets affected the portfolio."
+    },
+    "reward-boundary": {
+      prompt: "Why can't real rewards be calculated directly from simulated gains and losses?",
+      helperText: "Confirm that rewards come from bank campaign rules, not simulated investment returns."
     }
   },
   riskStatements: {
-    "我知道这是模拟学习，不是投资建议。": "I understand this is simulated learning, not investment advice.",
+    "我知道这是模拟学习，不代表真实投资收益。": "I understand this is simulated learning and does not represent real investment returns.",
     "我知道高波动产品可能上涨也可能下跌。": "I understand higher-volatility products can rise or fall.",
-    "我知道真实投资需要完成银行风险测评和销售披露。": "I understand real investing requires the bank's risk assessment and sales disclosures."
+    "我知道真实投资需要完成银行风险测评和产品适当性流程。": "I understand real investing requires the bank's risk assessment and product suitability process.",
+  "完成风险分散小课获得活动奖励。": "Campaign reward earned for completing the diversification lesson.",
+  "完成自动储蓄 mock 校验获得活动奖励。": "Campaign reward earned after completing the auto-savings mock verification.",
+  "9 月成长活动可领取奖励。": "September growth campaign reward is available to claim.",
+  "完成学习周期和复盘后产生的待校验活动奖励。": "Pending campaign reward generated after completing the learning cycle and reflection.",
+  "等待活动预算与风控校验。": "Waiting for campaign budget and risk-control validation.",
+  "本月提现窗口尚未开放。": "This month's withdrawal window is not open yet."
+
   }
 };
 
@@ -543,6 +582,12 @@ export function translateRiskLabel(locale: Locale, label: string): string {
     中等风险: "Medium Risk",
     低风险: "Low Risk",
     偏高风险: "Medium-High Risk",
+    中风险: "Medium Risk",
+    中高风险: "Medium-High Risk",
+    低波动学习组合: "Low-Volatility Learning Portfolio",
+    稳健均衡学习组合: "Conservative Balanced Learning Portfolio",
+    中等波动学习组合: "Medium-Volatility Learning Portfolio",
+    高波动学习组合: "High-Volatility Learning Portfolio",
     均衡组合: "Balanced Portfolio",
     成长组合: "Growth Portfolio",
     稳健组合: "Conservative Portfolio"
