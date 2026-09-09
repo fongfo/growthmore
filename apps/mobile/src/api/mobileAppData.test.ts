@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, railwayApiBaseUrl } from "./mobileAppData";
+import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, railwayApiBaseUrl, resolveApiBaseUrl } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -13,6 +13,16 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 describe("mobile API data loader", () => {
   it("defaults preview builds to the Railway API", () => {
     expect(defaultApiBaseUrl).toBe(railwayApiBaseUrl);
+  });
+
+  it("falls back to the Railway API when no runtime env is available", () => {
+    expect(resolveApiBaseUrl(undefined)).toBe(railwayApiBaseUrl);
+  });
+
+  it("uses an Expo public API URL when it is provided", () => {
+    expect(resolveApiBaseUrl({ env: { EXPO_PUBLIC_API_BASE_URL: "https://api.example.test" } })).toBe(
+      "https://api.example.test"
+    );
   });
 
   it("loads the mobile app aggregate from the Growthmore API", async () => {

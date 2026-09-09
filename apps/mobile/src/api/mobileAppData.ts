@@ -38,7 +38,19 @@ declare const process: {
 };
 
 export const railwayApiBaseUrl = "https://growthmore-production.up.railway.app";
-export const defaultApiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL || railwayApiBaseUrl;
+
+type ApiEnvironment = {
+  env?: {
+    EXPO_PUBLIC_API_BASE_URL?: string;
+  };
+};
+
+export function resolveApiBaseUrl(envSource?: ApiEnvironment): string {
+  return envSource?.env?.EXPO_PUBLIC_API_BASE_URL || railwayApiBaseUrl;
+}
+
+const runtimeProcess = typeof process !== "undefined" ? process : undefined;
+export const defaultApiBaseUrl = resolveApiBaseUrl(runtimeProcess);
 
 export type MobileAppData = {
   allocationDraft: SimulationAllocationDraft;
