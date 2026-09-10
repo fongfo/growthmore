@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { StatusBar } from "expo-status-bar";
 import { Pressable, SafeAreaView, StyleSheet, View } from "react-native";
 import {
@@ -116,7 +116,53 @@ const withdrawalStatusIcon: Record<WithdrawalStatus, IconName> = {
   failed: "alert-circle-outline",
   cancelled: "close-circle-outline"
 };
+type AppErrorBoundaryState = {
+  errorMessage: string | null;
+};
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
+  override state: AppErrorBoundaryState = { errorMessage: null };
+
+  static getDerivedStateFromError(error: unknown): AppErrorBoundaryState {
+    return { errorMessage: error instanceof Error ? error.message : "Unknown startup error" };
+  }
+
+  override componentDidCatch(error: unknown) {
+    console.error("Growthmore mobile render failed", error);
+  }
+
+  override render() {
+    if (this.state.errorMessage) {
+      return (
+        <View style={styles.appRoot}>
+          <StatusBar style="dark" />
+          <SafeAreaView style={styles.errorSafeArea}>
+            <View style={styles.errorScreen}>
+              <Card style={styles.apiStatusPanel}>
+                <View style={styles.sectionCopy}>
+                  <AppText variant="bodyStrong">App startup issue</AppText>
+                  <AppText color="textSecondary" variant="caption">{this.state.errorMessage}</AppText>
+                </View>
+              </Card>
+            </View>
+          </SafeAreaView>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function App() {
+  return (
+    <AppErrorBoundary>
+      <MobileApp />
+    </AppErrorBoundary>
+  );
+}
+
+function MobileApp() {
   const { data, errorMessage, isFallback, refresh, status } = useMobileAppData();
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [allocationDraft, setAllocationDraft] = useState(fallbackMobileAppData.allocationDraft);
@@ -724,6 +770,15 @@ const styles = StyleSheet.create({
   appRoot: {
     backgroundColor: colors.light.background,
     flex: 1
+  },
+  errorSafeArea: {
+    backgroundColor: colors.light.background,
+    flex: 1
+  },
+  errorScreen: {
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg
   },
   scene: {
     flex: 1

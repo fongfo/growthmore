@@ -31,7 +31,7 @@ export function useMobileAppData(apiBaseUrl = defaultApiBaseUrl): MobileAppDataS
       setStatus("ready");
     } catch (error) {
       setData(fallbackMobileAppData);
-      setErrorMessage(error instanceof Error ? error.message : "API 数据加载失败");
+      setErrorMessage(error instanceof Error ? error.message : "API data load failed.");
       setIsFallback(true);
       setStatus("error");
     }
