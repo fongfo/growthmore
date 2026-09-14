@@ -94,7 +94,7 @@ Recommended branch protection after the workflow exists in GitHub:
 
 ## Code Review Flow
 
-Use `.agents/skills/review-changes/skill.md` for structured review when a PR changes implementation code.
+Use `.agents/skills/review-changes/SKILL.md` for structured review when a PR changes implementation code.
 
 Review priorities:
 
@@ -126,7 +126,7 @@ Known baseline:
 1. Create or confirm a Jira `Bug` issue in `BGM`.
 2. Branch from `development` as `fix/BGM-<id>-short-name`.
 3. Reproduce or isolate the failing behavior before changing code.
-4. Use `.agents/skills/debug-issue/skill.md` to trace affected code paths.
+4. Use `.agents/skills/debug-issue/SKILL.md` to trace affected code paths.
 5. Add or update a regression test when feasible.
 6. Run `npm run lint`, `npm run typecheck`, `npm run test`, and `npm run build`.
 7. Run `npm run security:ci` when security, API, dependency, env, reward, withdrawal, or disclosure behavior changed.
