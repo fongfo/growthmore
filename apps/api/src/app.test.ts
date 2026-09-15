@@ -1,4 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
@@ -16,6 +19,7 @@ describe("production server startup", () => {
       cwd: process.cwd(),
       env: {
         ...process.env,
+        GROWTHMORE_DATABASE_PATH: ":memory:",
         PORT: "0"
       },
       stdio: ["ignore", "pipe", "pipe"]
@@ -138,6 +142,56 @@ describe("mock auth and bank account binding", () => {
       status: "linked",
       isWithdrawalAccount: true
     });
+  });
+
+  it("isolates persisted task state between demo sessions", async () => {
+    const app = createApp();
+    const firstLogin = await request(app).post("/api/auth/mock-login").send({ phone: "13800004288" });
+    const secondLogin = await request(app).post("/api/auth/mock-login").send({ phone: "13900001111" });
+    const firstToken = firstLogin.body.session.auth.accessToken as string;
+    const secondToken = secondLogin.body.session.auth.accessToken as string;
+
+    await request(app)
+      .post("/api/tasks/daily-check-in/start")
+      .set("Authorization", `Bearer ${firstToken}`)
+      .expect(200);
+
+    const firstTask = await request(app)
+      .get("/api/tasks/daily-check-in")
+      .set("Authorization", `Bearer ${firstToken}`);
+    const secondTask = await request(app)
+      .get("/api/tasks/daily-check-in")
+      .set("Authorization", `Bearer ${secondToken}`);
+
+    expect(firstTask.body.task.status).toBe("in_progress");
+    expect(secondTask.body.task.status).toBe("available");
+    expect(firstTask.body.task.userId).not.toBe(secondTask.body.task.userId);
+  });
+
+  it("restores user state after reopening the SQLite database", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "growthmore-store-"));
+    const databasePath = join(directory, "demo.sqlite");
+    try {
+      const firstApp = createApp({ databasePath });
+      await request(firstApp).post("/api/tasks/daily-check-in/start").expect(200);
+      firstApp.locals.demoStore.close();
+
+      const restartedApp = createApp({ databasePath });
+      const task = await request(restartedApp).get("/api/tasks/daily-check-in");
+      expect(task.body.task.status).toBe("in_progress");
+      restartedApp.locals.demoStore.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects an unknown bearer token", async () => {
+    const response = await request(createApp())
+      .get("/api/tasks")
+      .set("Authorization", "Bearer unknown-token");
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("invalid_demo_session");
   });
 });
 

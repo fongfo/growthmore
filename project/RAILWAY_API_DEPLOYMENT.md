@@ -17,7 +17,7 @@ Create one Railway project and one backend service:
 - Public networking: generate a public domain for API testing
 - Health check path: `/api/health`
 
-This is enough for the current Demo MVP API. You do not need to create a database yet because the API still uses mock/shared demo data.
+The Demo MVP API stores isolated experience-account state in SQLite. Add a Railway volume and mount it at `/data` so user progress survives deploys and restarts.
 
 ## Why Dockerfile
 
@@ -37,8 +37,9 @@ Minimum variables:
 
 - `NODE_ENV=production`
 - `WEB_ORIGIN=*` for demo testing, or a stricter allowed origin if required by the bank/test environment.
+- `GROWTHMORE_DATABASE_PATH=/data/growthmore-demo.sqlite`
 
-No secrets are required for the current Demo MVP API because it uses mock data.
+No bank credentials are required because login, linked accounts, and payouts remain explicit Demo data.
 
 ## Mobile App API URL
 
@@ -64,4 +65,4 @@ Expected `/api/health` fields:
 
 - `ok: true`
 - `service: growthmore-api`
-- `tenant: growthmore-bank`
+- `tenant: demo-bank`

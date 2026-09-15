@@ -1,5 +1,5 @@
 import cors from "cors";
-import express, { type Response } from "express";
+import express, { type Request, type Response } from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import {
@@ -7,47 +7,49 @@ import {
   applyWithdrawalReviewAction,
   createDisclosureAcceptance,
   createSimulationCycleRun,
-  demoAuditLogs,
-  demoComplianceSummary,
-  demoDisclosureAcceptances,
   demoDisclosureVersions,
-  demoLinkedBankAccount,
-  demoMockSession,
-  demoRewardJar,
-  demoRewardLedger,
-  demoWithdrawalRequests,
   createSimulationAllocationDraft,
-  demoSimulationAllocationDraft,
-  demoSimulationCycleRun,
   demoSimulationProducts,
-  demoTaskBoardSummary,
+  createTaskBoardSummary,
   demoTenant,
-  demoTodayHomeSummary,
-  demoUserTasks,
-  demoVirtualBalance,
-  demoVirtualBalanceLedger,
-  findDemoWithdrawalRequest,
-  getPendingDisclosureVersions,
   getRequiredDisclosureVersions,
   createWithdrawalRequest,
   validateSimulationAllocations,
   validateSimulationReflection,
   type SimulationAllocation,
   type SimulationReflectionSubmission,
-  type TaskAction,
-  type UserTask
+  type MockUserSession,
+  type TaskAction
 } from "@growthmore/shared";
+import { DemoStore, type DemoUserState } from "./demoStore.js";
 
-function findDemoTask(taskId: string): UserTask | undefined {
-  return demoUserTasks.find((task) => task.id === taskId);
+type CreateAppOptions = { databasePath?: string; store?: DemoStore };
+
+function bearerToken(request: Request): string | undefined {
+  return request.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
 }
 
-function respondWithTaskAction(response: Response, task: UserTask, action: TaskAction) {
+function currentSession(response: Response): MockUserSession {
+  return response.locals.session as MockUserSession;
+}
+
+function currentState(store: DemoStore, response: Response): DemoUserState {
+  return store.getState(currentSession(response).user.id);
+}
+
+function respondWithTaskAction(store: DemoStore, response: Response, taskId: string, action: TaskAction) {
+  const task = currentState(store, response).tasks.find((item) => item.id === taskId);
+  if (!task) {
+    response.status(404).json({ error: "task_not_found" });
+    return;
+  }
   try {
-    response.json({
-      action,
-      task: applyTaskAction(task, action)
-    });
+    const updatedTask = applyTaskAction(task, action);
+    store.updateState(currentSession(response).user.id, (state) => ({
+      ...state,
+      tasks: state.tasks.map((item) => item.id === taskId ? updatedTask : item)
+    }));
+    response.json({ action, task: updatedTask });
   } catch (error) {
     response.status(409).json({
       error: "invalid_task_transition",
@@ -56,8 +58,10 @@ function respondWithTaskAction(response: Response, task: UserTask, action: TaskA
   }
 }
 
-export function createApp() {
+export function createApp(options: CreateAppOptions = {}) {
   const app = express();
+  const store = options.store ?? new DemoStore(options.databasePath);
+  app.locals.demoStore = store;
 
   app.use(helmet());
   app.use(cors({ origin: process.env.WEB_ORIGIN ?? "http://localhost:5173" }));
@@ -78,21 +82,31 @@ export function createApp() {
     });
   });
 
-  app.post("/api/auth/mock-login", (_request, response) => {
+  app.post("/api/auth/mock-login", (request, response) => {
     response.status(201).json({
-      session: demoMockSession
+      session: store.login(request.body?.phone)
     });
+  });
+
+  app.use("/api", (request, response, next) => {
+    const session = store.getSession(bearerToken(request));
+    if (!session) {
+      response.status(401).json({ error: "invalid_demo_session" });
+      return;
+    }
+    response.locals.session = session;
+    next();
   });
 
   app.get("/api/auth/session", (_request, response) => {
     response.json({
-      session: demoMockSession
+      session: currentSession(response)
     });
   });
 
   app.get("/api/bank-accounts/current", (_request, response) => {
     response.json({
-      account: demoLinkedBankAccount
+      account: currentState(store, response).account
     });
   });
 
@@ -113,10 +127,16 @@ export function createApp() {
 
     const disclosureContext = requiredFor as Parameters<typeof getRequiredDisclosureVersions>[0];
 
+    const acceptedVersions = new Set(currentState(store, response).disclosureAcceptances.map(
+      (acceptance) => `${acceptance.disclosureId}:${acceptance.version}`
+    ));
+    const disclosures = getRequiredDisclosureVersions(disclosureContext);
     response.json({
       requiredFor,
-      disclosures: getRequiredDisclosureVersions(disclosureContext),
-      pendingDisclosures: getPendingDisclosureVersions(disclosureContext)
+      disclosures,
+      pendingDisclosures: disclosures.filter(
+        (disclosure) => !acceptedVersions.has(`${disclosure.id}:${disclosure.version}`)
+      )
     });
   });
 
@@ -132,40 +152,52 @@ export function createApp() {
       return;
     }
 
-    response.status(201).json({
-      acceptance: result.acceptance,
-      auditLog: result.auditLog
-    });
+    const acceptance = {
+      ...result.acceptance!,
+      id: store.createId("acceptance"),
+      userId: currentSession(response).user.id
+    };
+    const auditLog = {
+      ...result.auditLog!,
+      id: store.createId("audit"),
+      actorId: currentSession(response).user.id
+    };
+    store.updateState(currentSession(response).user.id, (state) => ({
+      ...state,
+      disclosureAcceptances: [...state.disclosureAcceptances, acceptance],
+      auditLogs: [...state.auditLogs, auditLog]
+    }));
+    response.status(201).json({ acceptance, auditLog });
   });
 
   app.get("/api/disclosure-acceptances/current", (_request, response) => {
     response.json({
-      acceptances: demoDisclosureAcceptances,
-      compliance: demoComplianceSummary
+      acceptances: currentState(store, response).disclosureAcceptances,
+      compliance: currentState(store, response).complianceSummary
     });
   });
 
   app.get("/api/admin/audit-logs", (_request, response) => {
     response.json({
-      auditLogs: demoAuditLogs
+      auditLogs: currentState(store, response).auditLogs
     });
   });
 
   app.get("/api/app/home", (_request, response) => {
     response.json({
-      home: demoTodayHomeSummary
+      home: currentState(store, response).home
     });
   });
 
   app.get("/api/virtual-balance", (_request, response) => {
     response.json({
-      balance: demoVirtualBalance
+      balance: currentState(store, response).virtualBalance
     });
   });
 
   app.get("/api/virtual-balance/ledger", (_request, response) => {
     response.json({
-      ledger: demoVirtualBalanceLedger
+      ledger: currentState(store, response).virtualBalanceLedger
     });
   });
 
@@ -177,7 +209,7 @@ export function createApp() {
 
   app.get("/api/simulation/allocations", (_request, response) => {
     response.json({
-      allocationDraft: demoSimulationAllocationDraft
+      allocationDraft: currentState(store, response).allocationDraft
     });
   });
 
@@ -185,7 +217,8 @@ export function createApp() {
     const allocations = Array.isArray(request.body?.allocations)
       ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
       : [];
-    const errors = validateSimulationAllocations(demoVirtualBalance.availableAmount, allocations);
+    const state = currentState(store, response);
+    const errors = validateSimulationAllocations(state.virtualBalance.availableAmount, allocations);
 
     if (errors.length > 0) {
       response.status(400).json({
@@ -195,22 +228,26 @@ export function createApp() {
       return;
     }
 
-    response.json({
-      allocationDraft: createSimulationAllocationDraft(demoVirtualBalance.availableAmount, allocations)
-    });
+    const allocationDraft = {
+      ...createSimulationAllocationDraft(state.virtualBalance.availableAmount, allocations),
+      userId: currentSession(response).user.id
+    };
+    store.updateState(currentSession(response).user.id, (value) => ({ ...value, allocationDraft }));
+    response.json({ allocationDraft });
   });
 
   app.get("/api/simulation/runs/current", (_request, response) => {
     response.json({
-      run: demoSimulationCycleRun
+      run: currentState(store, response).simulationRun
     });
   });
 
   app.post("/api/simulation/run", (request, response) => {
     const allocations = Array.isArray(request.body?.allocations)
       ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
-      : demoSimulationAllocationDraft.allocations;
-    const errors = validateSimulationAllocations(demoVirtualBalance.availableAmount, allocations);
+      : currentState(store, response).allocationDraft.allocations;
+    const balance = currentState(store, response).virtualBalance;
+    const errors = validateSimulationAllocations(balance.availableAmount, allocations);
 
     if (errors.length > 0) {
       response.status(400).json({
@@ -220,13 +257,18 @@ export function createApp() {
       return;
     }
 
-    response.status(201).json({
-      run: createSimulationCycleRun(createSimulationAllocationDraft(demoVirtualBalance.availableAmount, allocations))
-    });
+    const run = {
+      ...createSimulationCycleRun(createSimulationAllocationDraft(balance.availableAmount, allocations)),
+      id: store.createId("simulation-run"),
+      userId: currentSession(response).user.id
+    };
+    store.updateState(currentSession(response).user.id, (state) => ({ ...state, simulationRun: run }));
+    response.status(201).json({ run });
   });
 
   app.post("/api/simulation/runs/:runId/reflection", (request, response) => {
-    const run = request.params.runId === demoSimulationCycleRun.id ? demoSimulationCycleRun : null;
+    const storedRun = currentState(store, response).simulationRun;
+    const run = request.params.runId === storedRun.id ? storedRun : null;
 
     if (!run) {
       response.status(404).json({ error: "simulation_run_not_found" });
@@ -254,18 +296,19 @@ export function createApp() {
   });
   app.get("/api/rewards/jar", (_request, response) => {
     response.json({
-      rewardJar: demoRewardJar
+      rewardJar: currentState(store, response).rewardJar
     });
   });
 
   app.get("/api/rewards/history", (_request, response) => {
     response.json({
-      ledger: demoRewardLedger
+      ledger: currentState(store, response).rewardLedger
     });
   });
   app.post("/api/rewards/withdraw", (request, response) => {
     const amount = Number(request.body?.amount);
-    const result = createWithdrawalRequest(demoRewardJar, demoLinkedBankAccount, amount);
+    const state = currentState(store, response);
+    const result = createWithdrawalRequest(state.rewardJar, state.account, amount);
 
     if (result.errors.length > 0) {
       response.status(400).json({
@@ -275,82 +318,58 @@ export function createApp() {
       return;
     }
 
-    response.status(201).json({
-      withdrawal: result.request
-    });
+    const withdrawal = {
+      ...result.request!,
+      id: store.createId("withdrawal"),
+      userId: currentSession(response).user.id
+    };
+    store.updateState(currentSession(response).user.id, (value) => ({
+      ...value,
+      withdrawals: [withdrawal, ...value.withdrawals]
+    }));
+    response.status(201).json({ withdrawal });
   });
 
   app.get("/api/withdrawals", (_request, response) => {
     response.json({
-      withdrawals: demoWithdrawalRequests
+      withdrawals: currentState(store, response).withdrawals
     });
   });
 
-  app.post("/api/admin/withdrawals/:withdrawalId/approve", (request, response) => {
-    const withdrawal = findDemoWithdrawalRequest(request.params.withdrawalId);
-
-    if (!withdrawal) {
-      response.status(404).json({ error: "withdrawal_not_found" });
-      return;
-    }
-
-    const result = applyWithdrawalReviewAction(withdrawal, "approve", { reviewerId: request.body?.reviewerId });
-
-    if (result.error) {
-      response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
-      return;
-    }
-
-    response.json({ action: "approve", withdrawal: result.request });
-  });
-
-  app.post("/api/admin/withdrawals/:withdrawalId/reject", (request, response) => {
-    const withdrawal = findDemoWithdrawalRequest(request.params.withdrawalId);
-
-    if (!withdrawal) {
-      response.status(404).json({ error: "withdrawal_not_found" });
-      return;
-    }
-
-    const result = applyWithdrawalReviewAction(withdrawal, "reject", {
-      reason: request.body?.reason,
-      reviewerId: request.body?.reviewerId
+  for (const action of ["approve", "reject", "retry"] as const) {
+    app.post(`/api/admin/withdrawals/:withdrawalId/${action}`, (request, response) => {
+      const withdrawal = currentState(store, response).withdrawals.find(
+        (item) => item.id === request.params.withdrawalId
+      );
+      if (!withdrawal) {
+        response.status(404).json({ error: "withdrawal_not_found" });
+        return;
+      }
+      const result = applyWithdrawalReviewAction(withdrawal, action, {
+        reason: request.body?.reason,
+        reviewerId: request.body?.reviewerId
+      });
+      if (result.error || !result.request) {
+        response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
+        return;
+      }
+      store.updateState(currentSession(response).user.id, (state) => ({
+        ...state,
+        withdrawals: state.withdrawals.map((item) => item.id === withdrawal.id ? result.request! : item)
+      }));
+      response.json({ action, withdrawal: result.request });
     });
-
-    if (result.error) {
-      response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
-      return;
-    }
-
-    response.json({ action: "reject", withdrawal: result.request });
-  });
-
-  app.post("/api/admin/withdrawals/:withdrawalId/retry", (request, response) => {
-    const withdrawal = findDemoWithdrawalRequest(request.params.withdrawalId);
-
-    if (!withdrawal) {
-      response.status(404).json({ error: "withdrawal_not_found" });
-      return;
-    }
-
-    const result = applyWithdrawalReviewAction(withdrawal, "retry", { reviewerId: request.body?.reviewerId });
-
-    if (result.error) {
-      response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
-      return;
-    }
-
-    response.json({ action: "retry", withdrawal: result.request });
-  });
+  }
   app.get("/api/tasks", (_request, response) => {
+    const tasks = currentState(store, response).tasks;
     response.json({
-      summary: demoTaskBoardSummary,
-      tasks: demoUserTasks
+      summary: createTaskBoardSummary(tasks),
+      tasks
     });
   });
 
   app.get("/api/tasks/:taskId", (request, response) => {
-    const task = findDemoTask(request.params.taskId);
+    const task = currentState(store, response).tasks.find((item) => item.id === request.params.taskId);
 
     if (!task) {
       response.status(404).json({ error: "task_not_found" });
@@ -361,47 +380,24 @@ export function createApp() {
   });
 
   app.post("/api/tasks/:taskId/start", (request, response) => {
-    const task = findDemoTask(request.params.taskId);
-
-    if (!task) {
-      response.status(404).json({ error: "task_not_found" });
-      return;
-    }
-
-    respondWithTaskAction(response, task, "start");
+    respondWithTaskAction(store, response, request.params.taskId, "start");
   });
 
   app.post("/api/tasks/:taskId/submit", (request, response) => {
-    const task = findDemoTask(request.params.taskId);
-
-    if (!task) {
-      response.status(404).json({ error: "task_not_found" });
-      return;
-    }
-
-    respondWithTaskAction(response, task, "submit");
+    respondWithTaskAction(store, response, request.params.taskId, "submit");
   });
 
   app.post("/api/tasks/:taskId/verify", (request, response) => {
-    const task = findDemoTask(request.params.taskId);
-
-    if (!task) {
-      response.status(404).json({ error: "task_not_found" });
-      return;
-    }
-
-    respondWithTaskAction(response, task, request.body?.result === "rejected" ? "reject" : "approve");
+    respondWithTaskAction(
+      store,
+      response,
+      request.params.taskId,
+      request.body?.result === "rejected" ? "reject" : "approve"
+    );
   });
 
   app.post("/api/tasks/:taskId/claim", (request, response) => {
-    const task = findDemoTask(request.params.taskId);
-
-    if (!task) {
-      response.status(404).json({ error: "task_not_found" });
-      return;
-    }
-
-    respondWithTaskAction(response, task, "claim");
+    respondWithTaskAction(store, response, request.params.taskId, "claim");
   });
 
   return app;
