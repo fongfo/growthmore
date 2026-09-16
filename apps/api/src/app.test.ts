@@ -635,10 +635,10 @@ describe("task system", () => {
   });
 
   it("supports approving or rejecting a pending task", async () => {
-    const approved = await request(createApp()).post("/api/tasks/auto-savings-mock/verify").send({
+    const approved = await request(createApp()).post("/api/admin/tasks/auto-savings-mock/verify").send({
       result: "approved"
     });
-    const rejected = await request(createApp()).post("/api/tasks/auto-savings-mock/verify").send({
+    const rejected = await request(createApp()).post("/api/admin/tasks/auto-savings-mock/verify").send({
       result: "rejected"
     });
 
@@ -655,6 +655,34 @@ describe("task system", () => {
     expect(response.status).toBe(200);
     expect(response.body.task.status).toBe("claimed");
     expect(response.body.task.claimedAt).toBeTruthy();
+  });
+
+  it("completes a check-in and credits its virtual growth reward exactly once", async () => {
+    const app = createApp();
+    await request(app).post("/api/tasks/daily-check-in/start").expect(200);
+    const submitted = await request(app).post("/api/tasks/daily-check-in/submit");
+    const [firstClaim, repeatedClaim] = await Promise.all([
+      request(app).post("/api/tasks/daily-check-in/claim"),
+      request(app).post("/api/tasks/daily-check-in/claim")
+    ]);
+    const balance = await request(app).get("/api/virtual-balance");
+    const ledger = await request(app).get("/api/virtual-balance/ledger");
+
+    expect(submitted.body).toMatchObject({ autoVerified: true, task: { status: "completed" } });
+    expect([firstClaim.body.idempotent, repeatedClaim.body.idempotent].sort()).toEqual([false, true]);
+    expect(firstClaim.body.task.status).toBe("claimed");
+    expect(repeatedClaim.body.task.status).toBe("claimed");
+    expect(balance.body.balance.availableAmount).toBe(1650);
+    expect(ledger.body.ledger.filter((entry: { sourceId: string }) => entry.sourceId === "daily-check-in")).toHaveLength(1);
+  });
+
+  it("filters tasks without changing the full board summary", async () => {
+    const response = await request(createApp()).get("/api/tasks?type=learning");
+
+    expect(response.status).toBe(200);
+    expect(response.body.tasks).toHaveLength(1);
+    expect(response.body.tasks[0]).toMatchObject({ category: "learning" });
+    expect(response.body.summary.totalTaskCount).toBe(6);
   });
 
   it("rejects invalid task transitions", async () => {

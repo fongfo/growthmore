@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, railwayApiBaseUrl, resolveApiBaseUrl } from "./mobileAppData";
+import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, railwayApiBaseUrl, resolveApiBaseUrl, runTaskAction } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -61,5 +61,26 @@ describe("mobile API data loader", () => {
     const fetcher = vi.fn(async () => jsonResponse({ error: "offline" }, false, 503));
 
     await expect(loadMobileAppData(defaultApiBaseUrl, fetcher)).rejects.toThrow("GET /api/tenant/current failed with 503");
+  });
+
+  it("posts a task action and returns the updated task", async () => {
+    const updatedTask = { ...fallbackMobileAppData.tasks[0]!, status: "in_progress" as const };
+    const fetcher = vi.fn(async () => jsonResponse({ action: "start", task: updatedTask }));
+
+    const result = await runTaskAction("daily-check-in", "start", defaultApiBaseUrl, fetcher);
+
+    expect(result.task.status).toBe("in_progress");
+    expect(fetcher).toHaveBeenCalledWith(
+      defaultApiBaseUrl + "/api/tasks/daily-check-in/start",
+      { method: "POST", headers: { "Content-Type": "application/json" } }
+    );
+  });
+
+  it("surfaces the API message when a task action fails", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ message: "Task is already claimed." }, false, 409));
+
+    await expect(runTaskAction("daily-check-in", "claim", defaultApiBaseUrl, fetcher)).rejects.toThrow(
+      "Task is already claimed."
+    );
   });
 });

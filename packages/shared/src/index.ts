@@ -600,7 +600,7 @@ function withUserTaskState(task: TaskDefinition, status: TaskStatus, state?: Par
   };
 }
 
-export function applyTaskAction(task: UserTask, action: TaskAction): UserTask {
+export function applyTaskAction(task: UserTask, action: TaskAction, occurredAt = new Date().toISOString()): UserTask {
   const nextStatus = transitionTaskStatus(task.status, action);
 
   return {
@@ -608,11 +608,11 @@ export function applyTaskAction(task: UserTask, action: TaskAction): UserTask {
     status: nextStatus,
     availableActions: getAvailableTaskActions(nextStatus),
     rejectionReason: action === "reject" ? "提交记录与任务条件不匹配，请检查后重试。" : null,
-    startedAt: action === "start" || action === "retry" ? demoNow : task.startedAt,
-    submittedAt: action === "submit" ? demoNow : task.submittedAt,
-    completedAt: action === "approve" ? demoNow : task.completedAt,
-    claimedAt: action === "claim" ? demoNow : task.claimedAt,
-    updatedAt: demoNow
+    startedAt: action === "start" || action === "retry" ? occurredAt : task.startedAt,
+    submittedAt: action === "submit" ? occurredAt : task.submittedAt,
+    completedAt: action === "approve" ? occurredAt : task.completedAt,
+    claimedAt: action === "claim" ? occurredAt : task.claimedAt,
+    updatedAt: occurredAt
   };
 }
 
