@@ -19,7 +19,10 @@ import {
   type SimulationAllocation,
   type SimulationReflectionSubmission,
   type MockUserSession,
-  type TaskAction
+  type TaskAction,
+  type UserTask,
+  type VirtualBalanceLedgerEntry,
+  type VirtualBalanceSnapshot
 } from "@growthmore/shared";
 import { DemoStore, type DemoUserState } from "./demoStore.js";
 
@@ -56,6 +59,86 @@ function respondWithTaskAction(store: DemoStore, response: Response, taskId: str
       message: error instanceof Error ? error.message : "Task transition is not allowed."
     });
   }
+}
+
+type TaskClaimResult = {
+  balance: VirtualBalanceSnapshot;
+  idempotent: boolean;
+  ledgerEntry: VirtualBalanceLedgerEntry | null;
+  task: UserTask;
+};
+
+function claimTaskReward(store: DemoStore, userId: string, taskId: string): TaskClaimResult {
+  let claimResult: TaskClaimResult | null = null;
+
+  store.updateState(userId, (state) => {
+    const task = state.tasks.find((item) => item.id === taskId);
+    if (!task) throw new Error("task_not_found");
+
+    const existingEntry = state.virtualBalanceLedger.find(
+      (entry) => entry.entryType === "earn" && entry.sourceType === "task" && entry.sourceId === taskId
+    );
+    if (task.status === "claimed" && existingEntry) {
+      claimResult = { balance: state.virtualBalance, idempotent: true, ledgerEntry: existingEntry, task };
+      return state;
+    }
+    if (task.status !== "completed") throw new Error(`Invalid task transition: ${task.status} -> claim`);
+
+    if (existingEntry) {
+      const claimedTask = applyTaskAction(task, "claim");
+      claimResult = {
+        balance: state.virtualBalance,
+        idempotent: true,
+        ledgerEntry: existingEntry,
+        task: claimedTask
+      };
+      return {
+        ...state,
+        tasks: state.tasks.map((item) => item.id === taskId ? claimedTask : item)
+      };
+    }
+
+    const rewardAmount = task.reward.virtualGrowthAmount;
+    if (state.virtualBalance.todayEarnedAmount + rewardAmount > state.virtualBalance.dailyEarnLimitAmount) {
+      throw new Error("Daily virtual growth limit exceeded.");
+    }
+
+    const claimedTask = applyTaskAction(task, "claim");
+    const balance: VirtualBalanceSnapshot = {
+      ...state.virtualBalance,
+      availableAmount: state.virtualBalance.availableAmount + rewardAmount,
+      totalAmount: state.virtualBalance.totalAmount + rewardAmount,
+      todayEarnedAmount: state.virtualBalance.todayEarnedAmount + rewardAmount
+    };
+    const ledgerEntry: VirtualBalanceLedgerEntry = {
+      id: store.createId("vbl"),
+      userId,
+      entryType: "earn",
+      amount: rewardAmount,
+      currency: "CNY",
+      sourceType: "task",
+      sourceId: taskId,
+      balanceAfter: {
+        availableAmount: balance.availableAmount,
+        allocatedAmount: balance.allocatedAmount,
+        frozenAmount: balance.frozenAmount,
+        totalAmount: balance.totalAmount
+      },
+      ruleVersion: "demo-mvp-v1",
+      description: `完成任务“${task.title}”获得成长金。`,
+      createdAt: new Date().toISOString()
+    };
+    claimResult = { balance, idempotent: false, ledgerEntry, task: claimedTask };
+    return {
+      ...state,
+      tasks: state.tasks.map((item) => item.id === taskId ? claimedTask : item),
+      virtualBalance: balance,
+      virtualBalanceLedger: [...state.virtualBalanceLedger, ledgerEntry]
+    };
+  });
+
+  if (!claimResult) throw new Error("task_claim_failed");
+  return claimResult;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -360,10 +443,17 @@ export function createApp(options: CreateAppOptions = {}) {
       response.json({ action, withdrawal: result.request });
     });
   }
-  app.get("/api/tasks", (_request, response) => {
-    const tasks = currentState(store, response).tasks;
+  app.get("/api/tasks", (request, response) => {
+    const allTasks = currentState(store, response).tasks;
+    const category = typeof request.query.type === "string" ? request.query.type : null;
+    const status = typeof request.query.status === "string" ? request.query.status : null;
+    const tasks = allTasks.filter((task) => {
+      const categoryMatches = !category || category === "all" || task.category === category;
+      const statusMatches = !status || (status === "completed" ? ["completed", "claimed"].includes(task.status) : task.status === status);
+      return categoryMatches && statusMatches;
+    });
     response.json({
-      summary: createTaskBoardSummary(tasks),
+      summary: createTaskBoardSummary(allTasks),
       tasks
     });
   });
@@ -384,10 +474,32 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post("/api/tasks/:taskId/submit", (request, response) => {
-    respondWithTaskAction(store, response, request.params.taskId, "submit");
+    const taskId = request.params.taskId;
+    if (taskId !== "daily-check-in") {
+      respondWithTaskAction(store, response, taskId, "submit");
+      return;
+    }
+    const task = currentState(store, response).tasks.find((item) => item.id === taskId);
+    if (!task) {
+      response.status(404).json({ error: "task_not_found" });
+      return;
+    }
+    try {
+      const completedTask = applyTaskAction(applyTaskAction(task, "submit"), "approve");
+      store.updateState(currentSession(response).user.id, (state) => ({
+        ...state,
+        tasks: state.tasks.map((item) => item.id === taskId ? completedTask : item)
+      }));
+      response.json({ action: "submit", autoVerified: true, task: completedTask });
+    } catch (error) {
+      response.status(409).json({
+        error: "invalid_task_transition",
+        message: error instanceof Error ? error.message : "Task transition is not allowed."
+      });
+    }
   });
 
-  app.post("/api/tasks/:taskId/verify", (request, response) => {
+  app.post("/api/admin/tasks/:taskId/verify", (request, response) => {
     respondWithTaskAction(
       store,
       response,
@@ -396,8 +508,22 @@ export function createApp(options: CreateAppOptions = {}) {
     );
   });
 
+  app.post("/api/tasks/:taskId/retry", (request, response) => {
+    respondWithTaskAction(store, response, request.params.taskId, "retry");
+  });
+
   app.post("/api/tasks/:taskId/claim", (request, response) => {
-    respondWithTaskAction(store, response, request.params.taskId, "claim");
+    try {
+      const result = claimTaskReward(store, currentSession(response).user.id, request.params.taskId);
+      response.json({ action: "claim", ...result });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Task claim failed.";
+      if (message === "task_not_found") {
+        response.status(404).json({ error: "task_not_found" });
+        return;
+      }
+      response.status(409).json({ error: "invalid_task_transition", message });
+    }
   });
 
   return app;

@@ -24,6 +24,7 @@ import {
   type SimulationCycleRun,
   type SimulationProduct,
   type TaskBoardSummary,
+  type TaskAction,
   type TodayHomeSummary,
   type UserTask,
   type VirtualBalanceLedgerEntry,
@@ -70,7 +71,18 @@ export type MobileAppData = {
   withdrawals: WithdrawalRequest[];
 };
 
-type Fetcher = typeof fetch;
+export type Fetcher = typeof fetch;
+
+export type MobileTaskAction = Extract<TaskAction, "start" | "submit" | "retry" | "claim">;
+
+export type TaskActionResponse = {
+  action: MobileTaskAction;
+  autoVerified?: boolean;
+  balance?: VirtualBalanceSnapshot;
+  idempotent?: boolean;
+  ledgerEntry?: VirtualBalanceLedgerEntry | null;
+  task: UserTask;
+};
 
 export const fallbackMobileAppData: MobileAppData = {
   allocationDraft: demoSimulationAllocationDraft,
@@ -98,6 +110,25 @@ async function fetchJson<T>(baseUrl: string, path: string, fetcher: Fetcher): Pr
   }
 
   return response.json() as Promise<T>;
+}
+
+export async function runTaskAction(
+  taskId: string,
+  action: MobileTaskAction,
+  apiBaseUrl = defaultApiBaseUrl,
+  fetcher: Fetcher = fetch
+): Promise<TaskActionResponse> {
+  const baseUrl = apiBaseUrl.replace(/\/$/, "");
+  const path = "/api/tasks/" + encodeURIComponent(taskId) + "/" + action;
+  const response = await fetcher(baseUrl + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
+  });
+  const body = await response.json() as TaskActionResponse & { message?: string };
+  if (!response.ok) {
+    throw new Error(body.message ?? ("POST " + path + " failed with " + response.status));
+  }
+  return body;
 }
 
 export async function loadMobileAppData(

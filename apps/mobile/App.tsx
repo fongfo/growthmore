@@ -22,7 +22,7 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
-import { fallbackMobileAppData } from "./src/api/mobileAppData";
+import { fallbackMobileAppData, runTaskAction } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
@@ -44,8 +44,9 @@ import {
   translateText,
   type Locale
 } from "./src/i18n";
-import { colors, spacing } from "./src/theme";
+import { colors, spacing, touch } from "./src/theme";
 import { type IconName } from "./src/components";
+import { filterTasks, getTaskAction, type TaskFilterId } from "./src/taskFlow";
 
 const statusToneByStatus: Record<TaskStatus, "default" | "success" | "learning" | "reward" | "danger"> = {
   available: "learning",
@@ -169,6 +170,13 @@ function MobileApp() {
   const [locale, setLocale] = useState<Locale>("zh-CN");
   const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(fallbackMobileAppData.simulationRun);
   const [reflectionComplete, setReflectionComplete] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<TaskFilterId>("all");
+  const [selectedTaskId, setSelectedTaskId] = useState<string>("daily-check-in");
+  const [taskActionState, setTaskActionState] = useState<{
+    error: string | null;
+    loading: boolean;
+    message: string | null;
+  }>({ error: null, loading: false, message: null });
 
   useEffect(() => {
     setAllocationDraft(data.allocationDraft);
@@ -178,7 +186,9 @@ function MobileApp() {
 
   const home = data.home;
   const taskBoard = data.taskBoard;
-  const taskList = data.tasks.slice(0, 5).map((task) => translateTask(locale, task));
+  const taskList = filterTasks(data.tasks, taskFilter).map((task) => translateTask(locale, task));
+  const selectedTask = data.tasks.find((task) => task.id === selectedTaskId);
+  const localizedSelectedTask = selectedTask ? translateTask(locale, selectedTask) : null;
   const recentLedger = data.virtualBalanceLedger.slice(-3).reverse();
   const progressPercent = Math.round(home.level.progressPercent * 100);
   const virtualGrowthAmount = formatInteger(locale, data.virtualBalance.availableAmount);
@@ -227,6 +237,49 @@ function MobileApp() {
 
   const handleCompleteReflection = () => {
     setReflectionComplete(true);
+  };
+
+  const handleTaskFilterChange = (filterId: TaskFilterId) => {
+    const firstTask = filterTasks(data.tasks, filterId)[0];
+    setTaskFilter(filterId);
+    setSelectedTaskId(firstTask?.id ?? "");
+    setTaskActionState({ error: null, loading: false, message: null });
+  };
+
+  const handleTaskAction = async () => {
+    if (!selectedTask) return;
+    const action = getTaskAction(selectedTask);
+    if (!action) {
+      if (selectedTask.status === "claimed") setActiveTab("allocate");
+      return;
+    }
+    if (isFallback) {
+      setTaskActionState({
+        error: t(locale, "task.error.demoMode"),
+        loading: false,
+        message: null
+      });
+      return;
+    }
+
+    setTaskActionState({ error: null, loading: true, message: null });
+    try {
+      const result = await runTaskAction(selectedTask.id, action);
+      await refresh();
+      setTaskActionState({
+        error: null,
+        loading: false,
+        message: action === "claim"
+          ? t(locale, "task.success.claimed", { amount: formatInteger(locale, result.task.reward.virtualGrowthAmount) })
+          : t(locale, "task.success.updated")
+      });
+    } catch (error) {
+      setTaskActionState({
+        error: error instanceof Error ? error.message : t(locale, "task.error.action"),
+        loading: false,
+        message: null
+      });
+    }
   };
   return (
     <View style={styles.appRoot}>
@@ -567,22 +620,96 @@ function MobileApp() {
           </View>
 
           <View style={styles.filterRow}>
-            {taskBoard.categoryFilters.map((filter) => (
-              <View key={filter.id} style={styles.filterChip}>
-                <AppText color="primary" variant="label">
+            {taskBoard.categoryFilters.map((filter) => {
+              const selected = taskFilter === filter.id;
+              return (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                key={filter.id}
+                onPress={() => handleTaskFilterChange(filter.id)}
+                style={({ pressed }) => [
+                  styles.filterChip,
+                  selected ? styles.filterChipActive : undefined,
+                  pressed ? styles.filterChipPressed : undefined
+                ]}
+              >
+                <AppText color={selected ? "inverseText" : "primary"} variant="label">
                   {translateTaskFilter(locale, filter)}
                 </AppText>
-              </View>
-            ))}
+              </Pressable>
+              );
+            })}
           </View>
 
+          {localizedSelectedTask ? (
+            <View style={styles.taskDetail}>
+              <View style={styles.taskRowHeader}>
+                <View style={styles.sectionCopy}>
+                  <AppText color="primary" variant="eyebrow">{t(locale, "task.action.details")}</AppText>
+                  <AppText variant="heading">{localizedSelectedTask.title}</AppText>
+                  <AppText color="textSecondary" variant="body">{localizedSelectedTask.description}</AppText>
+                </View>
+                <Badge
+                  iconName={taskStatusIcon[localizedSelectedTask.status]}
+                  label={getTaskStatusCopy(locale, localizedSelectedTask.status).label}
+                  tone={statusToneByStatus[localizedSelectedTask.status]}
+                />
+              </View>
+              <View style={styles.taskDetailSection}>
+                <AppText variant="bodyStrong">{t(locale, "task.criteria")}</AppText>
+                <AppText color="textSecondary" variant="caption">
+                  {translateText(locale, localizedSelectedTask.completionCriteria)}
+                </AppText>
+              </View>
+              <View style={styles.taskNotice}>
+                <AppIcon color="learning" name="information-outline" size="sm" />
+                <View style={styles.sectionCopy}>
+                  <AppText variant="bodyStrong">{t(locale, "task.riskNotice")}</AppText>
+                  <AppText color="textSecondary" variant="caption">
+                    {translateText(locale, localizedSelectedTask.riskNotice)}
+                  </AppText>
+                </View>
+              </View>
+              {localizedSelectedTask.rejectionReason ? (
+                <View style={styles.rejectBox}>
+                  <AppText color="danger" variant="caption">{localizedSelectedTask.rejectionReason}</AppText>
+                </View>
+              ) : null}
+              {taskActionState.message ? (
+                <View accessibilityLiveRegion="polite" style={styles.taskSuccess}>
+                  <AppText color="success" variant="caption">{taskActionState.message}</AppText>
+                </View>
+              ) : null}
+              {taskActionState.error ? (
+                <View accessibilityLiveRegion="assertive" style={styles.rejectBox}>
+                  <AppText color="danger" variant="caption">{taskActionState.error}</AppText>
+                </View>
+              ) : null}
+              <Button
+                disabled={!getTaskAction(localizedSelectedTask) && localizedSelectedTask.status !== "claimed"}
+                label={localizedSelectedTask.status === "claimed"
+                  ? t(locale, "task.action.allocate")
+                  : getTaskStatusCopy(locale, localizedSelectedTask.status).ctaLabel}
+                loading={taskActionState.loading}
+                onPress={() => void handleTaskAction()}
+                variant={localizedSelectedTask.status === "completed" || localizedSelectedTask.status === "claimed" ? "primary" : "secondary"}
+              />
+            </View>
+          ) : null}
+
           <View style={styles.taskList}>
+            {taskList.length === 0 ? (
+              <View style={styles.taskEmpty}>
+                <AppText color="textSecondary" variant="body">{t(locale, "task.empty")}</AppText>
+              </View>
+            ) : null}
             {taskList.map((task) => {
               const statusCopy = getTaskStatusCopy(locale, task.status);
-              const isPassiveState = task.status === "pending_verification" || task.status === "claimed" || task.status === "reversed";
+              const selected = task.id === selectedTaskId;
 
               return (
-                <View key={task.id} style={styles.taskRow}>
+                <View key={task.id} style={[styles.taskRow, selected ? styles.taskRowSelected : undefined]}>
                   <View style={styles.taskRowHeader}>
                     <View style={styles.sectionCopy}>
                       <AppText variant="bodyStrong">{task.title}</AppText>
@@ -608,7 +735,15 @@ function MobileApp() {
                       </AppText>
                     </View>
                   ) : null}
-                  <Button disabled={isPassiveState} label={statusCopy.ctaLabel} variant={task.status === "completed" ? "primary" : "secondary"} />
+                  <Button
+                    accessibilityLabel={t(locale, "task.action.details") + ": " + task.title}
+                    label={t(locale, "task.action.details")}
+                    onPress={() => {
+                      setSelectedTaskId(task.id);
+                      setTaskActionState({ error: null, loading: false, message: null });
+                    }}
+                    variant="secondary"
+                  />
                 </View>
               );
             })}
@@ -1062,12 +1197,54 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   filterChip: {
+    alignItems: "center",
     backgroundColor: colors.light.surfaceMuted,
     borderColor: colors.light.border,
     borderRadius: 999,
     borderWidth: 1,
+    justifyContent: "center",
+    minHeight: touch.minCompactTarget,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
+  },
+  filterChipActive: {
+    backgroundColor: colors.light.primary,
+    borderColor: colors.light.primary
+  },
+  filterChipPressed: {
+    opacity: 0.82
+  },
+  taskDetail: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderColor: colors.light.borderStrong,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.lg
+  },
+  taskDetailSection: {
+    gap: spacing.xs
+  },
+  taskNotice: {
+    alignItems: "flex-start",
+    backgroundColor: colors.light.learningSoft,
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  taskSuccess: {
+    backgroundColor: colors.light.successSoft,
+    borderRadius: 8,
+    padding: spacing.md
+  },
+  taskEmpty: {
+    alignItems: "center",
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 12,
+    minHeight: 88,
+    justifyContent: "center",
+    padding: spacing.lg
   },
   taskList: {
     gap: spacing.md
@@ -1079,6 +1256,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.md
+  },
+  taskRowSelected: {
+    borderColor: colors.light.primary,
+    borderWidth: 2
   },
   taskRowHeader: {
     alignItems: "flex-start",

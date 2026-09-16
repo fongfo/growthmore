@@ -57,6 +57,15 @@ const messages: Record<Locale, Messages> = {
     "disclosure.run.title": "学习周期提醒",
     "earn.heading": "赚成长金",
     "earn.summary": "连续完成 {days} 天，今日可赚 {growth} 成长金和 {reward}",
+    "task.action.allocate": "去配置成长金",
+    "task.action.details": "查看详情",
+    "task.criteria": "完成条件",
+    "task.empty": "这个分类暂时没有任务。",
+    "task.error.action": "任务操作失败，请重试。",
+    "task.error.demoMode": "当前使用离线演示数据，连接 API 后才能保存任务进度。",
+    "task.riskNotice": "任务说明",
+    "task.success.claimed": "已领取 {amount} 成长金，余额和流水已更新。",
+    "task.success.updated": "任务状态已更新。",
     "label.available": "可用",
     "label.availableReward": "可领取 {amount}，最低领取 {minimum}",
     "label.availableWithdrawal": "可提现金额",
@@ -136,6 +145,15 @@ const messages: Record<Locale, Messages> = {
     "disclosure.run.title": "Learning Cycle Notice",
     "earn.heading": "Earn Growth Credits",
     "earn.summary": "{days}-day streak. Earn up to {growth} growth credits and {reward} today.",
+    "task.action.allocate": "Allocate Growth Credits",
+    "task.action.details": "View Details",
+    "task.criteria": "Completion Criteria",
+    "task.empty": "There are no tasks in this category yet.",
+    "task.error.action": "Task action failed. Please try again.",
+    "task.error.demoMode": "Offline demo data cannot save progress. Connect to the API to continue.",
+    "task.riskNotice": "Task Notice",
+    "task.success.claimed": "{amount} growth credits claimed. Your balance and ledger are updated.",
+    "task.success.updated": "Task status updated.",
     "label.available": "Available",
     "label.availableReward": "{amount} available, {minimum} minimum",
     "label.availableWithdrawal": "Available to Withdraw",
@@ -180,41 +198,53 @@ const messages: Record<Locale, Messages> = {
   }
 };
 
-const taskCopy: Record<string, Partial<Record<Locale, Pick<UserTask, "title" | "description"> & { rejectionReason?: string }>>> = {
+const taskCopy: Record<string, Partial<Record<Locale, Pick<UserTask, "title" | "description" | "completionCriteria" | "riskNotice"> & { rejectionReason?: string }>>> = {
   "auto-savings-mock": {
     "en-US": {
       title: "Turn on auto-savings mock",
-      description: "Simulate a monthly savings plan to validate the bank task flow."
+      description: "Simulate a monthly savings plan to validate the bank task flow.",
+      completionCriteria: "Submit the mock auto-savings setup and wait for system verification.",
+      riskNotice: "The Demo does not create a real savings plan or debit your account."
     }
   },
   "bank-account-linked": {
     "en-US": {
       title: "Link withdrawal account mock",
-      description: "Confirm the linked mock bank account for future reward withdrawals."
+      description: "Confirm the linked mock bank account for future reward withdrawals.",
+      completionCriteria: "The account must be linked and marked as the withdrawal account.",
+      riskNotice: "The Demo account does not represent real bank-account verification or payout."
     }
   },
   "daily-check-in": {
     "en-US": {
       title: "Complete today's check-in",
-      description: "Open the app and confirm today's financial health reminder to build a learning habit."
+      description: "Open the app and confirm today's financial health reminder to build a learning habit.",
+      completionCriteria: "The check-in can be completed once per calendar day.",
+      riskNotice: "Frequent device or account switching may trigger a duplicate-claim review."
     }
   },
   "profile-kyc-mock": {
     "en-US": {
       title: "Complete profile mock",
-      description: "Use the mock KYC status to complete your profile and unlock later bank tasks."
+      description: "Use the mock KYC status to complete your profile and unlock later bank tasks.",
+      completionCriteria: "The mock KYC status must be verified.",
+      riskNotice: "This does not represent real KYC, bank-account lookup, or payout capability."
     }
   },
   "risk-lesson": {
     "en-US": {
       title: "Complete a 5-minute diversification lesson",
-      description: "Learn why a simulated portfolio should not bet on one sector, then earn today's credits."
+      description: "Learn why a simulated portfolio should not bet on one sector, then earn today's credits.",
+      completionCriteria: "Finish the lesson and pass one knowledge check.",
+      riskNotice: "Simulation results are educational and do not represent real investment returns."
     }
   },
   "savings-goal": {
     "en-US": {
       title: "Set a savings goal",
       description: "Add this month's savings goal so your simulation has a clear learning target.",
+      completionCriteria: "Provide both a goal name and amount.",
+      riskNotice: "A savings goal is a planning record and does not promise returns.",
       rejectionReason: "Target amount is missing. Add an amount and try again."
     }
   }
@@ -496,7 +526,7 @@ export function getTaskStatusCopy(locale: Locale, status: TaskStatus): { label: 
       completed: { ctaLabel: "领取奖励", label: "已完成" },
       in_progress: { ctaLabel: "提交验证", label: "进行中" },
       pending_verification: { ctaLabel: "等待校验", label: "验证中" },
-      rejected: { ctaLabel: "查看原因", label: "未通过" },
+      rejected: { ctaLabel: "修改后重试", label: "未通过" },
       reversed: { ctaLabel: "查看记录", label: "已撤销" }
     },
     "en-US": {
@@ -505,7 +535,7 @@ export function getTaskStatusCopy(locale: Locale, status: TaskStatus): { label: 
       completed: { ctaLabel: "Claim Reward", label: "Complete" },
       in_progress: { ctaLabel: "Submit", label: "In Progress" },
       pending_verification: { ctaLabel: "Waiting", label: "Verifying" },
-      rejected: { ctaLabel: "View Reason", label: "Rejected" },
+      rejected: { ctaLabel: "Fix and Retry", label: "Rejected" },
       reversed: { ctaLabel: "View Record", label: "Reversed" }
     }
   };
@@ -518,8 +548,10 @@ export function translateTask(locale: Locale, task: UserTask): UserTask {
 
   return {
     ...task,
+    completionCriteria: localized?.completionCriteria ?? task.completionCriteria,
     description: localized?.description ?? task.description,
     rejectionReason: localized?.rejectionReason ?? translateText(locale, task.rejectionReason),
+    riskNotice: localized?.riskNotice ?? task.riskNotice,
     title: localized?.title ?? task.title
   };
 }
