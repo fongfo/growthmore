@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runTaskAction, submitLearningQuiz } from "./mobileAppData";
+import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runTaskAction, saveSimulationAllocations, submitLearningQuiz } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -99,6 +99,17 @@ describe("mobile API data loader", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ answerId: "reward-follows-rules" })
+    });
+  });
+
+  it("saves edited simulation allocations", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ allocationDraft: fallbackMobileAppData.allocationDraft }));
+    const allocations = [{ productId: "bond", amount: 500 }];
+    await saveSimulationAllocations(allocations, defaultApiBaseUrl, fetcher);
+    expect(fetcher).toHaveBeenCalledWith(defaultApiBaseUrl + "/api/simulation/allocations", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allocations })
     });
   });
 });

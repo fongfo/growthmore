@@ -1,6 +1,6 @@
 import { Component, useEffect, useState, type ReactNode } from "react";
 import { StatusBar } from "expo-status-bar";
-import { Pressable, SafeAreaView, StyleSheet, View } from "react-native";
+import { Pressable, SafeAreaView, StyleSheet, TextInput, View } from "react-native";
 import {
   createSimulationAllocationDraft,
   createSimulationCycleRun,
@@ -24,7 +24,7 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
-import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runTaskAction, submitLearningQuiz } from "./src/api/mobileAppData";
+import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runTaskAction, saveSimulationAllocations, submitLearningQuiz } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
@@ -169,6 +169,9 @@ function MobileApp() {
   const { data, errorMessage, isFallback, refresh, status } = useMobileAppData();
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [allocationDraft, setAllocationDraft] = useState(fallbackMobileAppData.allocationDraft);
+  const [allocationInputs, setAllocationInputs] = useState<Record<string, string>>({});
+  const [allocationRiskAccepted, setAllocationRiskAccepted] = useState(false);
+  const [allocationSaveState, setAllocationSaveState] = useState<{ loading: boolean; error: string | null; saved: boolean }>({ loading: false, error: null, saved: false });
   const [locale, setLocale] = useState<Locale>("zh-CN");
   const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(fallbackMobileAppData.simulationRun);
   const [reflectionComplete, setReflectionComplete] = useState(false);
@@ -185,6 +188,7 @@ function MobileApp() {
 
   useEffect(() => {
     setAllocationDraft(data.allocationDraft);
+    setAllocationInputs(Object.fromEntries(data.allocationDraft.allocations.map((item) => [item.productId, String(item.amount)])));
     setSimulationRun(data.simulationRun);
     setReflectionComplete(false);
   }, [data.allocationDraft, data.simulationRun]);
@@ -222,16 +226,20 @@ function MobileApp() {
     const example = allocationDraft.examples.find((item) => item.id === exampleId);
 
     if (example) {
-      const nextDraft = createSimulationAllocationDraft(data.virtualBalance.availableAmount, example.allocations);
+      const nextDraft = createSimulationAllocationDraft(data.virtualBalance.availableAmount + data.allocationDraft.totalAllocatedAmount, example.allocations);
       setAllocationDraft(nextDraft);
+      setAllocationInputs(Object.fromEntries(example.allocations.map((item) => [item.productId, String(item.amount)])));
+      setAllocationSaveState({ loading: false, error: null, saved: false });
       setSimulationRun(createSimulationCycleRun(nextDraft));
       setReflectionComplete(false);
     }
   };
 
   const handleResetAllocation = () => {
-    const nextDraft = createSimulationAllocationDraft(data.virtualBalance.availableAmount, []);
+    const nextDraft = createSimulationAllocationDraft(data.virtualBalance.availableAmount + data.allocationDraft.totalAllocatedAmount, []);
     setAllocationDraft(nextDraft);
+    setAllocationInputs({});
+    setAllocationSaveState({ loading: false, error: null, saved: false });
     setSimulationRun(createSimulationCycleRun(nextDraft));
     setReflectionComplete(false);
   };
@@ -245,6 +253,31 @@ function MobileApp() {
   const handleRunLearningCycle = () => {
     setSimulationRun(createSimulationCycleRun(allocationDraft));
     setReflectionComplete(false);
+  };
+
+  const handleAllocationInput = (productId: string, value: string) => {
+    const normalized = value.replace(/[^0-9.]/g, "");
+    const inputs = { ...allocationInputs, [productId]: normalized };
+    setAllocationInputs(inputs);
+    const allocations = data.simulationProducts.map((product) => ({ productId: product.id, amount: Number(inputs[product.id] || 0) }));
+    setAllocationDraft(createSimulationAllocationDraft(data.virtualBalance.availableAmount + data.allocationDraft.totalAllocatedAmount, allocations));
+    setAllocationSaveState({ loading: false, error: null, saved: false });
+  };
+
+  const handleSaveAllocation = async () => {
+    if (!allocationRiskAccepted) {
+      setAllocationSaveState({ loading: false, error: t(locale, "portfolio.confirmRequired"), saved: false });
+      return;
+    }
+    setAllocationSaveState({ loading: true, error: null, saved: false });
+    try {
+      const result = await saveSimulationAllocations(allocationDraft.allocations);
+      setAllocationDraft(result.allocationDraft);
+      await refresh();
+      setAllocationSaveState({ loading: false, error: null, saved: true });
+    } catch (error) {
+      setAllocationSaveState({ loading: false, error: error instanceof Error ? error.message : t(locale, "portfolio.saveError"), saved: false });
+    }
   };
 
   const handleCompleteReflection = () => {
@@ -561,6 +594,16 @@ function MobileApp() {
                       {allocation.percent}%
                     </AppText>
                   </View>
+                  <View style={styles.amountInputRow}>
+                    <AppText color="textSecondary" variant="label">{t(locale, "portfolio.amountLabel")}</AppText>
+                    <TextInput
+                      accessibilityLabel={t(locale, "portfolio.amountA11y", { product: product.name })}
+                      keyboardType="decimal-pad"
+                      onChangeText={(value) => handleAllocationInput(product.id, value)}
+                      style={styles.amountInput}
+                      value={allocationInputs[product.id] ?? ""}
+                    />
+                  </View>
                   <AppText color="textSecondary" variant="caption">
                     {product.simulationLogic}
                   </AppText>
@@ -574,6 +617,19 @@ function MobileApp() {
               {t(locale, "portfolio.riskConfirm")}
             </AppText>
           </View>
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: allocationRiskAccepted }}
+            onPress={() => setAllocationRiskAccepted((accepted) => !accepted)}
+            style={styles.riskCheckRow}
+          >
+            <AppIcon color={allocationRiskAccepted ? "success" : "textSecondary"} name={allocationRiskAccepted ? "checkbox-marked-outline" : "checkbox-blank-outline"} size="md" />
+            <AppText color="textSecondary" variant="caption">{t(locale, "portfolio.riskConfirm")}</AppText>
+          </Pressable>
+          {allocationSaveState.error ? <View style={styles.rejectBox}><AppText color="danger" variant="caption">{allocationSaveState.error}</AppText></View> : null}
+          {allocationSaveState.saved ? <View style={styles.taskSuccess}><AppText color="success" variant="caption">{t(locale, "portfolio.saved")}</AppText></View> : null}
+          <Button loading={allocationSaveState.loading} label={t(locale, "portfolio.save")} onPress={() => void handleSaveAllocation()} />
+          {allocationSaveState.saved ? <Button label={t(locale, "portfolio.continueLearning")} onPress={() => setActiveTab("grow")} variant="secondary" /> : null}
         </Card>
         ) : null}
 
@@ -1221,6 +1277,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.md,
     padding: spacing.md
+  },
+  amountInputRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  amountInput: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderColor: colors.light.borderStrong,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.light.textPrimary,
+    minHeight: touch.minTarget,
+    minWidth: 120,
+    paddingHorizontal: spacing.md,
+    textAlign: "right"
+  },
+  riskCheckRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: touch.minTarget,
+    paddingVertical: spacing.sm
   },
   allocationTrack: {
     backgroundColor: colors.light.surfaceMuted,
