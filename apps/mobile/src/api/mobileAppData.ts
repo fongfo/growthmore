@@ -22,6 +22,7 @@ import {
   type MockUserSession,
   type RewardJarSnapshot,
   type RewardLedgerEntry,
+  type SimulationAllocation,
   type SimulationAllocationDraft,
   type SimulationCycleRun,
   type SimulationProduct,
@@ -110,6 +111,22 @@ export function markLessonSectionRead(lessonId: string, sectionId: string, apiBa
 
 export function submitLearningQuiz(quizId: string, answerId: string, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
   return postJson<LearningQuizResponse>(apiBaseUrl, "/api/learning/quizzes/" + encodeURIComponent(quizId) + "/submit", { answerId }, fetcher);
+}
+
+export async function saveSimulationAllocations(
+  allocations: Array<Pick<SimulationAllocation, "productId" | "amount">>,
+  apiBaseUrl = defaultApiBaseUrl,
+  fetcher: Fetcher = fetch
+): Promise<{ allocationDraft: SimulationAllocationDraft }> {
+  const path = "/api/simulation/allocations";
+  const response = await fetcher(apiBaseUrl.replace(/\/$/, "") + path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allocations })
+  });
+  const payload = await response.json() as { allocationDraft: SimulationAllocationDraft; messages?: string[] };
+  if (!response.ok) throw new Error(payload.messages?.join(" ") ?? "Unable to save allocation.");
+  return payload;
 }
 
 export const fallbackMobileAppData: MobileAppData = {

@@ -302,7 +302,8 @@ export function createApp(options: CreateAppOptions = {}) {
       ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
       : [];
     const state = currentState(store, response);
-    const errors = validateSimulationAllocations(state.virtualBalance.availableAmount, allocations);
+    const capacity = state.virtualBalance.availableAmount + state.allocationDraft.totalAllocatedAmount;
+    const errors = validateSimulationAllocations(capacity, allocations);
 
     if (errors.length > 0) {
       response.status(400).json({
@@ -312,12 +313,54 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    const allocationDraft = {
-      ...createSimulationAllocationDraft(state.virtualBalance.availableAmount, allocations),
-      userId: currentSession(response).user.id
-    };
-    store.updateState(currentSession(response).user.id, (value) => ({ ...value, allocationDraft }));
-    response.json({ allocationDraft });
+    let allocationDraft = state.allocationDraft;
+    let balance = state.virtualBalance;
+    let ledgerEntry: VirtualBalanceLedgerEntry | null = null;
+    store.updateState(currentSession(response).user.id, (value) => {
+      const currentCapacity = value.virtualBalance.availableAmount + value.allocationDraft.totalAllocatedAmount;
+      const currentErrors = validateSimulationAllocations(currentCapacity, allocations);
+      if (currentErrors.length > 0) throw new Error(currentErrors.join("|"));
+      const nextTotal = allocations.reduce((sum, item) => sum + item.amount, 0);
+      const delta = nextTotal - value.allocationDraft.totalAllocatedAmount;
+      balance = {
+        ...value.virtualBalance,
+        availableAmount: value.virtualBalance.availableAmount - delta,
+        allocatedAmount: value.virtualBalance.allocatedAmount + delta
+      };
+      allocationDraft = {
+        ...createSimulationAllocationDraft(currentCapacity, allocations),
+        availableAmount: balance.availableAmount,
+        unallocatedAmount: balance.availableAmount,
+        userId: currentSession(response).user.id
+      };
+      if (delta !== 0) {
+        ledgerEntry = {
+          id: store.createId("vbl"),
+          userId: currentSession(response).user.id,
+          entryType: delta > 0 ? "allocate" : "release",
+          amount: Math.abs(delta),
+          currency: "CNY",
+          sourceType: "simulation_allocation",
+          sourceId: "allocation-draft",
+          balanceAfter: {
+            availableAmount: balance.availableAmount,
+            allocatedAmount: balance.allocatedAmount,
+            frozenAmount: balance.frozenAmount,
+            totalAmount: balance.totalAmount
+          },
+          ruleVersion: "demo-mvp-v1",
+          description: delta > 0 ? "保存模拟配置，成长金转入学习配置。" : "调整模拟配置，成长金释放回可用余额。",
+          createdAt: new Date().toISOString()
+        };
+      }
+      return {
+        ...value,
+        allocationDraft,
+        virtualBalance: balance,
+        virtualBalanceLedger: ledgerEntry ? [...value.virtualBalanceLedger, ledgerEntry] : value.virtualBalanceLedger
+      };
+    });
+    response.json({ allocationDraft, balance, ledgerEntry });
   });
 
   app.get("/api/simulation/runs/current", (_request, response) => {

@@ -306,19 +306,21 @@ describe("simulation products and allocations", () => {
     expect(response.status).toBe(200);
     expect(response.body.allocationDraft).toMatchObject({
       totalAllocatedAmount: 1200,
-      unallocatedAmount: 350
+      unallocatedAmount: 1600
     });
     expect(response.body.allocationDraft.allocations.map((allocation: { percent: number }) => allocation.percent)).toEqual([
       42,
       33,
       25
     ]);
+    expect(response.body.balance).toMatchObject({ availableAmount: 1600, allocatedAmount: 200 });
+    expect(response.body.ledgerEntry).toMatchObject({ entryType: "release", amount: 50, sourceType: "simulation_allocation" });
   });
 
   it("rejects invalid allocations", async () => {
     const response = await request(createApp()).put("/api/simulation/allocations").send({
       allocations: [
-        { productId: "missing-product", amount: 2000 }
+        { productId: "missing-product", amount: 3000 }
       ]
     });
 
@@ -326,6 +328,26 @@ describe("simulation products and allocations", () => {
     expect(response.body.error).toBe("invalid_simulation_allocations");
     expect(response.body.messages).toContain("Unknown simulation product: missing-product");
     expect(response.body.messages).toContain("Allocated amount cannot exceed available virtual growth balance.");
+  });
+
+  it("persists a saved allocation and its balance ledger after restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "growthmore-allocation-"));
+    const databasePath = join(directory, "demo.sqlite");
+    try {
+      const app = createApp({ databasePath });
+      await request(app).put("/api/simulation/allocations").send({
+        allocations: [{ productId: "term-deposit", amount: 1000 }]
+      }).expect(200);
+      app.locals.demoStore.close();
+      const restarted = createApp({ databasePath });
+      const draft = await request(restarted).get("/api/simulation/allocations");
+      const ledger = await request(restarted).get("/api/virtual-balance/ledger");
+      expect(draft.body.allocationDraft.totalAllocatedAmount).toBe(1000);
+      expect(ledger.body.ledger.at(-1)).toMatchObject({ entryType: "release", amount: 250 });
+      restarted.locals.demoStore.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });
 describe("simulation learning cycle and reflection", () => {
