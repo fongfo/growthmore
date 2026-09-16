@@ -8,4 +8,5 @@ coverage/
 Thumbs.db
 .code-review-graph/
 apps/mobile/build/
+apps/api/data/*.sqlite*
 
