@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, railwayApiBaseUrl, resolveApiBaseUrl, runTaskAction } from "./mobileAppData";
+import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runTaskAction, submitLearningQuiz } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -82,5 +82,23 @@ describe("mobile API data loader", () => {
     await expect(runTaskAction("daily-check-in", "claim", defaultApiBaseUrl, fetcher)).rejects.toThrow(
       "Task is already claimed."
     );
+  });
+
+  it("sends lesson progress and quiz answers to the server", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ progress: { readSectionIds: ["virtual-growth"] } }));
+
+    await markLessonSectionRead("growth-and-reward-basics", "virtual-growth", defaultApiBaseUrl, fetcher);
+    await submitLearningQuiz("growth-reward-check", "reward-follows-rules", defaultApiBaseUrl, fetcher);
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, defaultApiBaseUrl + "/api/learning/lessons/growth-and-reward-basics/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sectionId: "virtual-growth" })
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(2, defaultApiBaseUrl + "/api/learning/quizzes/growth-reward-check/submit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answerId: "reward-follows-rules" })
+    });
   });
 });

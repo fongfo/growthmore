@@ -17,6 +17,8 @@ import {
   type BankTenant,
   type ComplianceSummary,
   type LinkedBankAccount,
+  type LearningLesson,
+  type LearningProgress,
   type MockUserSession,
   type RewardJarSnapshot,
   type RewardLedgerEntry,
@@ -83,6 +85,32 @@ export type TaskActionResponse = {
   ledgerEntry?: VirtualBalanceLedgerEntry | null;
   task: UserTask;
 };
+
+export type LearningLessonResponse = { lesson: LearningLesson; progress: LearningProgress };
+export type LearningQuizResponse = { passed: boolean; feedback: string; progress: LearningProgress; task: UserTask };
+
+async function postJson<T>(baseUrl: string, path: string, body: unknown, fetcher: Fetcher): Promise<T> {
+  const response = await fetcher(baseUrl.replace(/\/$/, "") + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json() as T & { message?: string };
+  if (!response.ok) throw new Error(payload.message ?? ("POST " + path + " failed with " + response.status));
+  return payload;
+}
+
+export function loadLearningLesson(lessonId: string, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
+  return fetchJson<LearningLessonResponse>(apiBaseUrl.replace(/\/$/, ""), "/api/learning/lessons/" + encodeURIComponent(lessonId), fetcher);
+}
+
+export function markLessonSectionRead(lessonId: string, sectionId: string, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
+  return postJson<{ progress: LearningProgress }>(apiBaseUrl, "/api/learning/lessons/" + encodeURIComponent(lessonId) + "/read", { sectionId }, fetcher);
+}
+
+export function submitLearningQuiz(quizId: string, answerId: string, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
+  return postJson<LearningQuizResponse>(apiBaseUrl, "/api/learning/quizzes/" + encodeURIComponent(quizId) + "/submit", { answerId }, fetcher);
+}
 
 export const fallbackMobileAppData: MobileAppData = {
   allocationDraft: demoSimulationAllocationDraft,

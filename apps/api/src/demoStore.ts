@@ -13,6 +13,7 @@ import {
   demoSimulationAllocationDraft,
   demoSimulationCycleRun,
   demoTodayHomeSummary,
+  demoIntroLesson,
   demoUserTasks,
   demoVirtualBalance,
   demoVirtualBalanceLedger,
@@ -21,6 +22,7 @@ import {
   type ComplianceSummary,
   type DisclosureAcceptance,
   type LinkedBankAccount,
+  type LearningProgress,
   type MockUserSession,
   type RewardJarSnapshot,
   type RewardLedgerEntry,
@@ -47,6 +49,7 @@ export type DemoUserState = {
   complianceSummary: ComplianceSummary;
   auditLogs: AuditLogEntry[];
   home: TodayHomeSummary;
+  learningProgress: LearningProgress[];
 };
 
 type StoredUser = {
@@ -144,7 +147,8 @@ function seedUser(phone: string): StoredUser {
       )
     },
     auditLogs: demoAuditLogs.map((item) => item.actorType === "user" ? { ...clone(item), actorId: identity.userId } : clone(item)),
-    home: { ...clone(demoTodayHomeSummary), userId: identity.userId }
+    home: { ...clone(demoTodayHomeSummary), userId: identity.userId },
+    learningProgress: [{ lessonId: demoIntroLesson.id, taskId: demoIntroLesson.taskId, readSectionIds: [], quizAttemptCount: 0, quizPassed: false, score: null, feedback: null, completedAt: null, updatedAt: new Date().toISOString() }]
   };
 
   return { session, state };
@@ -220,7 +224,21 @@ export class DemoStore {
       | { state_json: string }
       | undefined;
     if (!row) throw new Error(`Demo user does not exist: ${userId}`);
-    return JSON.parse(row.state_json) as DemoUserState;
+    const state = JSON.parse(row.state_json) as DemoUserState;
+    if (!Array.isArray(state.learningProgress)) {
+      state.learningProgress = [{
+        lessonId: demoIntroLesson.id,
+        taskId: demoIntroLesson.taskId,
+        readSectionIds: [],
+        quizAttemptCount: 0,
+        quizPassed: false,
+        score: null,
+        feedback: null,
+        completedAt: null,
+        updatedAt: new Date().toISOString()
+      }];
+    }
+    return state;
   }
 
   updateState(userId: string, update: (state: DemoUserState) => DemoUserState): DemoUserState {
