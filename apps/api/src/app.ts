@@ -11,6 +11,7 @@ import {
   createSimulationAllocationDraft,
   demoSimulationProducts,
   createTaskBoardSummary,
+  demoIntroLesson,
   demoTenant,
   getRequiredDisclosureVersions,
   createWithdrawalRequest,
@@ -475,6 +476,10 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post("/api/tasks/:taskId/submit", (request, response) => {
     const taskId = request.params.taskId;
+    if (taskId === demoIntroLesson.taskId) {
+      response.status(409).json({ error: "learning_required", message: "请阅读全部课程内容并通过知识测验后完成任务。" });
+      return;
+    }
     if (taskId !== "daily-check-in") {
       respondWithTaskAction(store, response, taskId, "submit");
       return;
@@ -524,6 +529,79 @@ export function createApp(options: CreateAppOptions = {}) {
       }
       response.status(409).json({ error: "invalid_task_transition", message });
     }
+  });
+
+  app.get("/api/learning/lessons/:lessonId", (request, response) => {
+    if (request.params.lessonId !== demoIntroLesson.id) {
+      response.status(404).json({ error: "lesson_not_found" });
+      return;
+    }
+    const progress = currentState(store, response).learningProgress.find((item) => item.lessonId === demoIntroLesson.id);
+    response.json({ lesson: demoIntroLesson, progress });
+  });
+
+  app.post("/api/learning/lessons/:lessonId/read", (request, response) => {
+    if (request.params.lessonId !== demoIntroLesson.id) {
+      response.status(404).json({ error: "lesson_not_found" });
+      return;
+    }
+    const sectionId = typeof request.body?.sectionId === "string" ? request.body.sectionId : "";
+    if (!demoIntroLesson.sections.some((section) => section.id === sectionId)) {
+      response.status(400).json({ error: "invalid_section", message: "课程章节不存在。" });
+      return;
+    }
+    let savedProgress = currentState(store, response).learningProgress[0]!;
+    store.updateState(currentSession(response).user.id, (state) => {
+      const progress = state.learningProgress.find((item) => item.lessonId === demoIntroLesson.id)!;
+      savedProgress = { ...progress, readSectionIds: Array.from(new Set([...progress.readSectionIds, sectionId])), updatedAt: new Date().toISOString() };
+      return { ...state, learningProgress: state.learningProgress.map((item) => item.lessonId === demoIntroLesson.id ? savedProgress : item) };
+    });
+    response.json({ progress: savedProgress });
+  });
+
+  app.post("/api/learning/quizzes/:quizId/submit", (request, response) => {
+    if (request.params.quizId !== demoIntroLesson.quiz.id) {
+      response.status(404).json({ error: "quiz_not_found" });
+      return;
+    }
+    const answerId = typeof request.body?.answerId === "string" ? request.body.answerId : "";
+    if (!demoIntroLesson.quiz.options.some((option) => option.id === answerId)) {
+      response.status(400).json({ error: "invalid_answer", message: "请选择一个答案后提交。" });
+      return;
+    }
+    const state = currentState(store, response);
+    const progress = state.learningProgress.find((item) => item.lessonId === demoIntroLesson.id)!;
+    if (progress.readSectionIds.length < demoIntroLesson.sections.length) {
+      response.status(409).json({ error: "lesson_incomplete", message: "请先阅读全部课程章节，再提交测验。" });
+      return;
+    }
+    const passed = answerId === "reward-follows-rules";
+    const feedback = passed
+      ? "回答正确。活动奖励来自银行预算，并按任务和活动规则确定。"
+      : answerId === "growth-is-cash"
+        ? "虚拟成长金不是现金，只能用于模拟配置和学习。请复习第一节后重试。"
+        : "模拟涨跌不会直接决定活动奖励。请复习第二节后重试。";
+    let savedProgress = progress;
+    let savedTask = state.tasks.find((item) => item.id === demoIntroLesson.taskId)!;
+    store.updateState(currentSession(response).user.id, (current) => {
+      const currentProgress = current.learningProgress.find((item) => item.lessonId === demoIntroLesson.id)!;
+      savedProgress = {
+        ...currentProgress,
+        quizAttemptCount: currentProgress.quizAttemptCount + 1,
+        quizPassed: passed,
+        score: passed ? 100 : 0,
+        feedback,
+        completedAt: passed ? currentProgress.completedAt ?? new Date().toISOString() : null,
+        updatedAt: new Date().toISOString()
+      };
+      if (passed && savedTask.status === "in_progress") savedTask = applyTaskAction(applyTaskAction(savedTask, "submit"), "approve");
+      return {
+        ...current,
+        learningProgress: current.learningProgress.map((item) => item.lessonId === demoIntroLesson.id ? savedProgress : item),
+        tasks: current.tasks.map((item) => item.id === savedTask.id ? savedTask : item)
+      };
+    });
+    response.json({ passed, feedback, progress: savedProgress, task: savedTask });
   });
 
   return app;

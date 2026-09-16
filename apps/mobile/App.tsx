@@ -4,12 +4,14 @@ import { Pressable, SafeAreaView, StyleSheet, View } from "react-native";
 import {
   createSimulationAllocationDraft,
   createSimulationCycleRun,
+  demoIntroLesson,
   validateWithdrawalRequest,
   type SimulationAllocation,
   type SimulationCycleRun,
   type RewardStatus,
   type WithdrawalStatus,
-  type TaskStatus
+  type TaskStatus,
+  type LearningProgress
 } from "@growthmore/shared";
 import {
   AppIcon,
@@ -22,7 +24,7 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
-import { fallbackMobileAppData, runTaskAction } from "./src/api/mobileAppData";
+import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runTaskAction, submitLearningQuiz } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
@@ -172,6 +174,9 @@ function MobileApp() {
   const [reflectionComplete, setReflectionComplete] = useState(false);
   const [taskFilter, setTaskFilter] = useState<TaskFilterId>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string>("daily-check-in");
+  const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
+  const [selectedQuizAnswer, setSelectedQuizAnswer] = useState<string>("");
+  const [learningLoading, setLearningLoading] = useState(false);
   const [taskActionState, setTaskActionState] = useState<{
     error: string | null;
     loading: boolean;
@@ -183,6 +188,13 @@ function MobileApp() {
     setSimulationRun(data.simulationRun);
     setReflectionComplete(false);
   }, [data.allocationDraft, data.simulationRun]);
+
+  useEffect(() => {
+    if (selectedTaskId !== demoIntroLesson.taskId || isFallback) return;
+    void loadLearningLesson(demoIntroLesson.id)
+      .then((result) => setLearningProgress(result.progress))
+      .catch((error) => setTaskActionState({ error: error instanceof Error ? error.message : t(locale, "learning.error.load"), loading: false, message: null }));
+  }, [isFallback, locale, selectedTaskId]);
 
   const home = data.home;
   const taskBoard = data.taskBoard;
@@ -279,6 +291,46 @@ function MobileApp() {
         loading: false,
         message: null
       });
+    }
+  };
+
+  const handleReadSection = async (sectionId: string) => {
+    if (isFallback) {
+      setTaskActionState({ error: t(locale, "task.error.demoMode"), loading: false, message: null });
+      return;
+    }
+    setLearningLoading(true);
+    setTaskActionState({ error: null, loading: false, message: null });
+    try {
+      const result = await markLessonSectionRead(demoIntroLesson.id, sectionId);
+      setLearningProgress(result.progress);
+    } catch (error) {
+      setTaskActionState({ error: error instanceof Error ? error.message : t(locale, "learning.error.save"), loading: false, message: null });
+    } finally {
+      setLearningLoading(false);
+    }
+  };
+
+  const handleSubmitQuiz = async () => {
+    if (!selectedQuizAnswer) {
+      setTaskActionState({ error: t(locale, "learning.error.answer"), loading: false, message: null });
+      return;
+    }
+    setLearningLoading(true);
+    setTaskActionState({ error: null, loading: false, message: null });
+    try {
+      const result = await submitLearningQuiz(demoIntroLesson.quiz.id, selectedQuizAnswer);
+      setLearningProgress(result.progress);
+      setTaskActionState({
+        error: result.passed ? null : translateText(locale, result.feedback),
+        loading: false,
+        message: result.passed ? translateText(locale, result.feedback) : null
+      });
+      if (result.passed) await refresh();
+    } catch (error) {
+      setTaskActionState({ error: error instanceof Error ? error.message : t(locale, "learning.error.submit"), loading: false, message: null });
+    } finally {
+      setLearningLoading(false);
     }
   };
   return (
@@ -676,6 +728,71 @@ function MobileApp() {
                   <AppText color="danger" variant="caption">{localizedSelectedTask.rejectionReason}</AppText>
                 </View>
               ) : null}
+              {localizedSelectedTask.id === demoIntroLesson.taskId && localizedSelectedTask.status === "in_progress" ? (
+                <View style={styles.lessonPanel}>
+                  <View style={styles.lessonHeader}>
+                    <View style={styles.sectionCopy}>
+                      <AppText color="learning" variant="eyebrow">{t(locale, "learning.label")}</AppText>
+                      <AppText variant="bodyStrong">{translateText(locale, demoIntroLesson.title)}</AppText>
+                      <AppText color="textSecondary" variant="caption">{translateText(locale, demoIntroLesson.introduction)}</AppText>
+                    </View>
+                    <Badge
+                      iconName="book-open-page-variant-outline"
+                      label={t(locale, "learning.progress", { read: learningProgress?.readSectionIds.length ?? 0, total: demoIntroLesson.sections.length })}
+                      tone="learning"
+                    />
+                  </View>
+                  {demoIntroLesson.sections.map((section, index) => {
+                    const read = learningProgress?.readSectionIds.includes(section.id) ?? false;
+                    return (
+                      <View key={section.id} style={[styles.lessonSection, read ? styles.lessonSectionRead : undefined]}>
+                        <View style={styles.lessonHeader}>
+                          <View style={styles.sectionCopy}>
+                            <AppText variant="bodyStrong">{index + 1}. {translateText(locale, section.title)}</AppText>
+                            <AppText color="textSecondary" variant="body">{translateText(locale, section.body)}</AppText>
+                          </View>
+                          <AppIcon color={read ? "success" : "textSecondary"} name={read ? "check-circle-outline" : "circle-outline"} size="md" />
+                        </View>
+                        <Button
+                          disabled={read || learningLoading}
+                          label={read ? t(locale, "learning.read") : t(locale, "learning.markRead")}
+                          onPress={() => void handleReadSection(section.id)}
+                          variant="secondary"
+                        />
+                      </View>
+                    );
+                  })}
+                  <View style={styles.quizPanel}>
+                    <AppText color="learning" variant="eyebrow">{t(locale, "learning.quiz")}</AppText>
+                    <AppText variant="bodyStrong">{translateText(locale, demoIntroLesson.quiz.prompt)}</AppText>
+                    {demoIntroLesson.quiz.options.map((option) => {
+                      const selected = selectedQuizAnswer === option.id;
+                      return (
+                        <Pressable
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: selected, disabled: learningProgress?.readSectionIds.length !== demoIntroLesson.sections.length }}
+                          disabled={learningProgress?.readSectionIds.length !== demoIntroLesson.sections.length}
+                          key={option.id}
+                          onPress={() => setSelectedQuizAnswer(option.id)}
+                          style={({ pressed }) => [styles.quizOption, selected ? styles.quizOptionSelected : undefined, pressed ? styles.filterChipPressed : undefined]}
+                        >
+                          <AppIcon color={selected ? "primary" : "textSecondary"} name={selected ? "radiobox-marked" : "radiobox-blank"} size="md" />
+                          <AppText color={selected ? "primary" : "textPrimary"} variant="body">{translateText(locale, option.label)}</AppText>
+                        </Pressable>
+                      );
+                    })}
+                    <Button
+                      disabled={learningProgress?.readSectionIds.length !== demoIntroLesson.sections.length || learningLoading}
+                      label={t(locale, "learning.submit")}
+                      loading={learningLoading}
+                      onPress={() => void handleSubmitQuiz()}
+                    />
+                    {learningProgress?.quizAttemptCount ? (
+                      <AppText color="textSecondary" variant="caption">{t(locale, "learning.attempts", { count: learningProgress.quizAttemptCount })}</AppText>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
               {taskActionState.message ? (
                 <View accessibilityLiveRegion="polite" style={styles.taskSuccess}>
                   <AppText color="success" variant="caption">{taskActionState.message}</AppText>
@@ -686,7 +803,7 @@ function MobileApp() {
                   <AppText color="danger" variant="caption">{taskActionState.error}</AppText>
                 </View>
               ) : null}
-              <Button
+              {localizedSelectedTask.id !== demoIntroLesson.taskId || localizedSelectedTask.status !== "in_progress" ? <Button
                 disabled={!getTaskAction(localizedSelectedTask) && localizedSelectedTask.status !== "claimed"}
                 label={localizedSelectedTask.status === "claimed"
                   ? t(locale, "task.action.allocate")
@@ -694,7 +811,7 @@ function MobileApp() {
                 loading={taskActionState.loading}
                 onPress={() => void handleTaskAction()}
                 variant={localizedSelectedTask.status === "completed" || localizedSelectedTask.status === "claimed" ? "primary" : "secondary"}
-              />
+              /> : null}
             </View>
           ) : null}
 
@@ -1237,6 +1354,47 @@ const styles = StyleSheet.create({
     backgroundColor: colors.light.successSoft,
     borderRadius: 8,
     padding: spacing.md
+  },
+  lessonPanel: {
+    gap: spacing.md
+  },
+  lessonHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  lessonSection: {
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  lessonSectionRead: {
+    borderColor: colors.light.success
+  },
+  quizPanel: {
+    backgroundColor: colors.light.learningSoft,
+    borderRadius: 12,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  quizOption: {
+    alignItems: "center",
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: touch.minTarget,
+    padding: spacing.md
+  },
+  quizOptionSelected: {
+    borderColor: colors.light.primary,
+    borderWidth: 2
   },
   taskEmpty: {
     alignItems: "center",

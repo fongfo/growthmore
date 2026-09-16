@@ -626,14 +626,6 @@ describe("task system", () => {
     });
   });
 
-  it("supports submitting an in-progress task", async () => {
-    const response = await request(createApp()).post("/api/tasks/risk-lesson/submit");
-
-    expect(response.status).toBe(200);
-    expect(response.body.task.status).toBe("pending_verification");
-    expect(response.body.task.availableActions).toEqual(["approve", "reject"]);
-  });
-
   it("supports approving or rejecting a pending task", async () => {
     const approved = await request(createApp()).post("/api/admin/tasks/auto-savings-mock/verify").send({
       result: "approved"
@@ -697,5 +689,60 @@ describe("task system", () => {
 
     expect(response.status).toBe(404);
     expect(response.body.error).toBe("task_not_found");
+  });
+
+  it("requires the lesson flow instead of trusting a direct task submission", async () => {
+    const response = await request(createApp()).post("/api/tasks/risk-lesson/submit");
+
+    expect(response.status).toBe(409);
+    expect(response.body.error).toBe("learning_required");
+  });
+
+  it("saves reading progress, explains wrong answers, and completes the task only after a server-scored pass", async () => {
+    const app = createApp();
+
+    for (const sectionId of ["virtual-growth", "campaign-reward", "risk-awareness"]) {
+      await request(app)
+        .post("/api/learning/lessons/growth-and-reward-basics/read")
+        .send({ sectionId })
+        .expect(200);
+    }
+
+    const wrong = await request(app)
+      .post("/api/learning/quizzes/growth-reward-check/submit")
+      .send({ answerId: "simulation-drives-reward" });
+    const taskAfterWrong = await request(app).get("/api/tasks/risk-lesson");
+    const passed = await request(app)
+      .post("/api/learning/quizzes/growth-reward-check/submit")
+      .send({ answerId: "reward-follows-rules" });
+
+    expect(wrong.body).toMatchObject({ passed: false, progress: { quizAttemptCount: 1, quizPassed: false, score: 0 } });
+    expect(wrong.body.feedback).toContain("模拟涨跌");
+    expect(taskAfterWrong.body.task.status).toBe("in_progress");
+    expect(passed.body).toMatchObject({
+      passed: true,
+      progress: { quizAttemptCount: 2, quizPassed: true, score: 100 },
+      task: { status: "completed", availableActions: ["claim"] }
+    });
+  });
+
+  it("persists lesson progress when the API restarts", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "growthmore-learning-"));
+    const databasePath = join(directory, "demo.sqlite");
+    try {
+      const firstApp = createApp({ databasePath });
+      await request(firstApp)
+        .post("/api/learning/lessons/growth-and-reward-basics/read")
+        .send({ sectionId: "virtual-growth" })
+        .expect(200);
+      firstApp.locals.demoStore.close();
+
+      const restartedApp = createApp({ databasePath });
+      const lesson = await request(restartedApp).get("/api/learning/lessons/growth-and-reward-basics");
+      expect(lesson.body.progress.readSectionIds).toEqual(["virtual-growth"]);
+      restartedApp.locals.demoStore.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

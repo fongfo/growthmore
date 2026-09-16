@@ -138,6 +138,45 @@ export type TaskBoardSummary = {
     label: string;
   }>;
 };
+
+export type LearningLessonSection = { id: string; title: string; body: string };
+export type LearningQuizOption = { id: string; label: string };
+export type LearningLesson = {
+  id: string;
+  taskId: string;
+  title: string;
+  introduction: string;
+  sections: LearningLessonSection[];
+  quiz: { id: string; prompt: string; options: LearningQuizOption[] };
+};
+export type LearningProgress = {
+  lessonId: string;
+  taskId: string;
+  readSectionIds: string[];
+  quizAttemptCount: number;
+  quizPassed: boolean;
+  score: number | null;
+  feedback: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+};
+
+export const demoIntroLesson: LearningLesson = {
+  id: "growth-and-reward-basics",
+  taskId: "risk-lesson",
+  title: "成长金与活动奖励入门",
+  introduction: "先分清两类余额，再认识模拟学习中的波动风险。阅读全部内容后完成测验。",
+  sections: [
+    { id: "virtual-growth", title: "虚拟成长金用于学习", body: "虚拟成长金来自任务，只能用于模拟配置和金融知识学习。它不是现金、存款或真实资产，不能直接提现。" },
+    { id: "campaign-reward", title: "活动奖励来自银行预算", body: "奖励罐中的活动奖励来自银行活动预算。是否可领取取决于任务、学习动作、活动资格和审核规则，不由模拟涨跌决定。" },
+    { id: "risk-awareness", title: "模拟变化也有风险含义", body: "不同模拟资产的波动不同，分散配置可以降低集中风险，但不能消除风险。模拟结果不构成投资建议。" }
+  ],
+  quiz: { id: "growth-reward-check", prompt: "下面哪项说法正确？", options: [
+    { id: "growth-is-cash", label: "虚拟成长金等同现金，可以直接提现" },
+    { id: "simulation-drives-reward", label: "模拟组合涨得越多，活动奖励一定越高" },
+    { id: "reward-follows-rules", label: "活动奖励来自银行预算，并按任务和活动规则确定" }
+  ] }
+};
 export type VirtualBalanceLedgerEntryType = "earn" | "allocate" | "release" | "freeze" | "clawback" | "adjust";
 
 export type VirtualBalanceLedgerSourceType = "task" | "simulation_allocation" | "risk_review" | "admin_adjustment";
