@@ -23,7 +23,7 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
-import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection } from "./src/api/mobileAppData";
+import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
@@ -187,6 +187,7 @@ function MobileApp() {
     loading: boolean;
     message: string | null;
   }>({ error: null, loading: false, message: null });
+  const [introductionLoading, setIntroductionLoading] = useState(false);
 
   useEffect(() => {
     setAllocationDraft(data.allocationDraft);
@@ -224,6 +225,22 @@ function MobileApp() {
   const localizedAllocationExamples = allocationDraft.examples.map((example) => translateAllocationExample(locale, example));
   const localizedSimulationProducts = data.simulationProducts.map((product) => translateProduct(locale, product));
   const localizedSimulationRun = simulationRun ? translateSimulationRun(locale, simulationRun) : null;
+  const journeyLabelKey = {
+    task: "today.step.task",
+    allocation: "today.step.allocation",
+    reflection: "today.step.reflection"
+  } as const;
+
+  const handleIntroduction = async (dismissed: boolean) => {
+    if (isFallback) return;
+    setIntroductionLoading(true);
+    try {
+      await updateHomeIntroduction(dismissed);
+      await refresh();
+    } finally {
+      setIntroductionLoading(false);
+    }
+  };
 
   const handleApplyExample = (exampleId: string) => {
     const example = allocationDraft.examples.find((item) => item.id === exampleId);
@@ -504,6 +521,28 @@ function MobileApp() {
 
         {activeTab === "today" ? (
         <>
+        {!home.introduction.dismissed ? (
+          <Card style={styles.introductionPanel} tone="learning">
+            <AppText color="learning" variant="eyebrow">{t(locale, "today.intro.eyebrow")}</AppText>
+            <AppText variant="title">{t(locale, "today.intro.title")}</AppText>
+            <AppText color="textSecondary" variant="body">{t(locale, "today.intro.body")}</AppText>
+            <Button
+              disabled={isFallback}
+              label={t(locale, "today.intro.dismiss")}
+              loading={introductionLoading}
+              onPress={() => void handleIntroduction(true)}
+              variant="secondary"
+            />
+          </Card>
+        ) : (
+          <Button
+            label={t(locale, "today.intro.review")}
+            loading={introductionLoading}
+            onPress={() => void handleIntroduction(false)}
+            variant="ghost"
+          />
+        )}
+
         <Card style={styles.todayPanel}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionCopy}>
@@ -518,7 +557,35 @@ function MobileApp() {
             {t(locale, "today.progress", { percent: progressPercent, count: home.level.remainingTaskCount })}
           </AppText>
           <ProgressBar accessibilityLabel={t(locale, "a11y.planProgress", { percent: progressPercent })} value={home.level.progressPercent} />
-          <Button label={t(locale, "action.startTodayTask")} onPress={() => setActiveTab("earn")} />
+          <View style={styles.journeyPanel}>
+            <AppText variant="bodyStrong">{t(locale, "today.journey.title")}</AppText>
+            {home.journey.map((step) => (
+              <View key={step.id} style={styles.journeyRow}>
+                <View style={[styles.journeyMarker, styles[`journeyMarker_${step.status}`]]}>
+                  <AppIcon
+                    color={step.status === "pending" ? "textSecondary" : "inverseText"}
+                    name={step.status === "complete" ? "check" : step.status === "current" ? "arrow-right" : "circle-outline"}
+                    size="sm"
+                  />
+                </View>
+                <AppText style={styles.journeyLabel} variant="bodyStrong">{t(locale, journeyLabelKey[step.id])}</AppText>
+                <AppText color="textSecondary" variant="caption">{t(locale, `today.step.${step.status}`)}</AppText>
+              </View>
+            ))}
+          </View>
+        </Card>
+
+        <Card style={styles.nextActionPanel} tone={home.primaryAction.state === "complete" ? "success" : "default"}>
+          <AppText color="primary" variant="eyebrow">{t(locale, "today.next.eyebrow")}</AppText>
+          <AppText variant="heading">{translateText(locale, home.primaryAction.title)}</AppText>
+          <AppText color="textSecondary" variant="body">{translateText(locale, home.primaryAction.description)}</AppText>
+          <View style={styles.nextReason}>
+            <AppIcon color="learning" name="information-outline" size="md" />
+            <AppText color="textSecondary" style={styles.nextReasonCopy} variant="caption">
+              {t(locale, "today.next.reason", { reason: translateText(locale, home.primaryAction.reason) ?? home.primaryAction.reason })}
+            </AppText>
+          </View>
+          <Button label={translateText(locale, home.primaryAction.ctaLabel) ?? home.primaryAction.ctaLabel} onPress={() => setActiveTab(home.primaryAction.target)} />
         </Card>
 
         <View style={styles.metrics}>
@@ -555,7 +622,7 @@ function MobileApp() {
                 <View style={styles.sectionCopy}>
                   <AppText variant="bodyStrong">{translateText(locale, entry.description)}</AppText>
                   <AppText color="textSecondary" variant="caption">
-                    {entry.ruleVersion} · {entry.sourceType}
+                    {entry.createdAt.slice(0, 10)}
                   </AppText>
                 </View>
                 <AppText color={entry.entryType === "clawback" || entry.entryType === "freeze" ? "danger" : "success"} variant="label">
@@ -1247,6 +1314,56 @@ const styles = StyleSheet.create({
   },
   todayPanel: {
     gap: spacing.lg
+  },
+  introductionPanel: {
+    gap: spacing.md
+  },
+  journeyPanel: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderRadius: 12,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  journeyRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: touch.minTarget
+  },
+  journeyMarker: {
+    alignItems: "center",
+    borderRadius: 999,
+    height: 32,
+    justifyContent: "center",
+    width: 32
+  },
+  journeyMarker_pending: {
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.borderStrong,
+    borderWidth: 1
+  },
+  journeyMarker_current: {
+    backgroundColor: colors.light.learning
+  },
+  journeyMarker_complete: {
+    backgroundColor: colors.light.success
+  },
+  journeyLabel: {
+    flex: 1
+  },
+  nextActionPanel: {
+    gap: spacing.md
+  },
+  nextReason: {
+    alignItems: "flex-start",
+    backgroundColor: colors.light.learningSoft,
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  nextReasonCopy: {
+    flex: 1
   },
   metrics: {
     flexDirection: "row",

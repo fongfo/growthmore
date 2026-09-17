@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection } from "./mobileAppData";
+import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -74,6 +74,17 @@ describe("mobile API data loader", () => {
       defaultApiBaseUrl + "/api/tasks/daily-check-in/start",
       { method: "POST", headers: { "Content-Type": "application/json" } }
     );
+  });
+
+  it("updates the independent Today introduction preference", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ home: { ...fallbackMobileAppData.home, introduction: { dismissed: true } } }));
+    const result = await updateHomeIntroduction(true, defaultApiBaseUrl, fetcher);
+    expect(result.home.introduction.dismissed).toBe(true);
+    expect(fetcher).toHaveBeenCalledWith(defaultApiBaseUrl + "/api/app/home/introduction", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dismissed: true })
+    });
   });
 
   it("surfaces the API message when a task action fails", async () => {
