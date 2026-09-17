@@ -115,6 +115,10 @@ export function submitLearningQuiz(quizId: string, answerId: string, apiBaseUrl 
   return postJson<LearningQuizResponse>(apiBaseUrl, "/api/learning/quizzes/" + encodeURIComponent(quizId) + "/submit", { answerId }, fetcher);
 }
 
+export function updateHomeIntroduction(dismissed: boolean, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
+  return postJson<{ home: TodayHomeSummary }>(apiBaseUrl, "/api/app/home/introduction", { dismissed }, fetcher);
+}
+
 export async function saveSimulationAllocations(
   allocations: Array<Pick<SimulationAllocation, "productId" | "amount">>,
   apiBaseUrl = defaultApiBaseUrl,

@@ -491,6 +491,19 @@ export type TodayHomeSummary = {
     rewardJarAmount: number;
     currency: "CNY";
   };
+  introduction: { dismissed: boolean };
+  journey: Array<{
+    id: "task" | "allocation" | "reflection";
+    status: "pending" | "current" | "complete";
+  }>;
+  primaryAction: {
+    target: "earn" | "allocate" | "grow" | "rewards";
+    title: string;
+    description: string;
+    reason: string;
+    ctaLabel: string;
+    state: "ready" | "waiting" | "complete";
+  };
   recommendedTask: {
     id: string;
     type: TodayTaskType;
@@ -1886,6 +1899,20 @@ export const demoTodayHomeSummary: TodayHomeSummary = {
     virtualGrowthAmount: demoVirtualBalance.availableAmount,
     rewardJarAmount: demoRewardJar.totalBalanceAmount,
     currency: "CNY"
+  },
+  introduction: { dismissed: false },
+  journey: [
+    { id: "task", status: "current" },
+    { id: "allocation", status: "pending" },
+    { id: "reflection", status: "pending" }
+  ],
+  primaryAction: {
+    target: "earn",
+    title: "完成 5 分钟风险分散小课",
+    description: "先完成一项具体任务，获得用于模拟配置的成长金。",
+    reason: "风险分散小课还在进行中。",
+    ctaLabel: "继续今日任务",
+    state: "ready"
   },
   recommendedTask: {
     id: "risk-lesson",

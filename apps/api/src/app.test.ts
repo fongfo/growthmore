@@ -207,7 +207,7 @@ describe("app home", () => {
       level: {
         label: "Level 2",
         planName: "稳健成长计划",
-        remainingTaskCount: 2
+        remainingTaskCount: 3
       },
       balances: {
         virtualGrowthAmount: 1550,
@@ -221,10 +221,67 @@ describe("app home", () => {
       },
       withdrawalWindow: {
         status: "open"
+      },
+      primaryAction: {
+        target: "earn",
+        state: "ready"
       }
     });
-    expect(response.body.home.level.progressPercent).toBeGreaterThan(0);
+    expect(response.body.home.level.progressPercent).toBe(0);
+    expect(response.body.home.journey.map((step: { status: string }) => step.status)).toEqual(["current", "pending", "pending"]);
     expect(response.body.home.nextActions).toHaveLength(3);
+  });
+
+  it("keeps a zero-balance new user on a concrete task", async () => {
+    const app = createApp();
+    app.locals.demoStore.updateState("mock-user-001", (state: DemoUserState) => ({
+      ...state,
+      virtualBalance: { ...state.virtualBalance, availableAmount: 0, totalAmount: 0 },
+      tasks: state.tasks.map((task) => task.id === "risk-lesson" ? { ...task, status: "available" as const } : task)
+    }));
+    const response = await request(app).get("/api/app/home");
+    expect(response.body.home.primaryAction).toMatchObject({ target: "earn", ctaLabel: "开始今日任务" });
+  });
+
+  it("explains waiting, insufficient balance, and completed states from server facts", async () => {
+    const waitingApp = createApp();
+    waitingApp.locals.demoStore.updateState("mock-user-001", (state: DemoUserState) => ({
+      ...state,
+      tasks: state.tasks.map((task) => task.id === "risk-lesson" ? { ...task, status: "pending_verification" as const } : task)
+    }));
+    const waiting = await request(waitingApp).get("/api/app/home");
+    expect(waiting.body.home.primaryAction).toMatchObject({ target: "earn", state: "waiting" });
+
+    const noBalanceApp = createApp();
+    noBalanceApp.locals.demoStore.updateState("mock-user-001", (state: DemoUserState) => ({
+      ...state,
+      allocationDraft: { ...state.allocationDraft, allocations: [], totalAllocatedAmount: 0 },
+      virtualBalance: { ...state.virtualBalance, availableAmount: 0 },
+      tasks: state.tasks.map((task) => task.id === "risk-lesson" ? { ...task, status: "claimed" as const } : task)
+    }));
+    const noBalance = await request(noBalanceApp).get("/api/app/home");
+    expect(noBalance.body.home.primaryAction).toMatchObject({ target: "earn", state: "waiting" });
+
+    const completeApp = createApp();
+    completeApp.locals.demoStore.updateState("mock-user-001", (state: DemoUserState) => ({
+      ...state,
+      simulationRun: { ...state.simulationRun, reviewStatus: "completed" as const, rewardEligible: false },
+      tasks: state.tasks.map((task) => task.id === "risk-lesson" ? { ...task, status: "claimed" as const } : task)
+    }));
+    const complete = await request(completeApp).get("/api/app/home");
+    expect(complete.body.home.primaryAction).toMatchObject({ target: "rewards", state: "complete" });
+    expect(complete.body.home.primaryAction.reason).toContain("未产生");
+  });
+
+  it("stores introduction preference separately from learning progress", async () => {
+    const app = createApp();
+    const before = app.locals.demoStore.getState("mock-user-001").learningProgress;
+    const dismissed = await request(app).post("/api/app/home/introduction").send({ dismissed: true });
+    expect(dismissed.status).toBe(200);
+    expect(dismissed.body.home.introduction.dismissed).toBe(true);
+    expect(app.locals.demoStore.getState("mock-user-001").learningProgress).toEqual(before);
+    const reviewed = await request(app).post("/api/app/home/introduction").send({ dismissed: false });
+    expect(reviewed.body.home.introduction.dismissed).toBe(false);
   });
 });
 

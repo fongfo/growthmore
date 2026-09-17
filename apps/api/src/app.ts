@@ -24,6 +24,7 @@ import {
   type TaskAction,
   type UserTask,
   type RewardLedgerEntry,
+  type TodayHomeSummary,
   type VirtualBalanceLedgerEntry,
   type VirtualBalanceSnapshot
 } from "@growthmore/shared";
@@ -41,6 +42,83 @@ function currentSession(response: Response): MockUserSession {
 
 function currentState(store: DemoStore, response: Response): DemoUserState {
   return store.getState(currentSession(response).user.id);
+}
+
+function createTodayHome(state: DemoUserState): TodayHomeSummary {
+  const focusTask = state.tasks.find((task) => task.id === "risk-lesson") ?? state.tasks[0]!;
+  const taskComplete = focusTask.status === "claimed";
+  const allocationComplete = taskComplete && state.allocationDraft.totalAllocatedAmount > 0;
+  const runAllocation = new Map(state.simulationRun.allocationSnapshot.map((item) => [item.productId, item.amount]));
+  const runMatchesCurrentAllocation =
+    state.allocationDraft.allocations.length === state.simulationRun.allocationSnapshot.length &&
+    state.allocationDraft.allocations.every((item) => runAllocation.get(item.productId) === item.amount);
+  const reflectionComplete = allocationComplete && runMatchesCurrentAllocation && state.simulationRun.reviewStatus === "completed";
+  const waitingForReview = focusTask.status === "pending_verification";
+
+  const primaryAction: TodayHomeSummary["primaryAction"] = !taskComplete
+    ? {
+        target: "earn",
+        title: focusTask.title,
+        description: waitingForReview ? "任务已提交，审核完成后即可进入模拟配置。" : "先完成一项具体任务，获得用于模拟配置的成长金。",
+        reason: waitingForReview ? "当前任务正在审核中。" : focusTask.status === "completed" ? "任务已完成，奖励尚未领取。" : "这是进入模拟配置前的第一步。",
+        ctaLabel: waitingForReview ? "查看审核状态" : focusTask.status === "completed" ? "领取任务奖励" : focusTask.status === "in_progress" ? "继续今日任务" : "开始今日任务",
+        state: waitingForReview ? "waiting" : "ready"
+      }
+    : !allocationComplete
+      ? {
+          target: state.virtualBalance.availableAmount <= 0 ? "earn" : "allocate",
+          title: "配置你的模拟组合",
+          description: "把成长金分配到学习产品，观察不同配置的模拟变化。",
+          reason: state.virtualBalance.availableAmount <= 0 ? "当前没有可配置的成长金，请先完成任务。" : "任务奖励已领取，下一步是完成模拟配置。",
+          ctaLabel: state.virtualBalance.availableAmount <= 0 ? "返回任务" : "开始模拟配置",
+          state: state.virtualBalance.availableAmount <= 0 ? "waiting" : "ready"
+        }
+      : !reflectionComplete
+        ? {
+            target: "grow",
+            title: "完成本期学习复盘",
+            description: "查看模拟变化并回答复盘问题，确认你理解风险与奖励边界。",
+            reason: "模拟配置已保存，本期复盘尚未完成。",
+            ctaLabel: "继续学习复盘",
+            state: "ready"
+          }
+        : {
+            target: "rewards",
+            title: "今天的学习闭环已完成",
+            description: "查看奖励资格、锁定原因和活动流水。",
+            reason: state.simulationRun.rewardEligible ? "复盘已完成，奖励资格已按活动规则计算。" : "复盘已完成，本期未产生活动奖励。",
+            ctaLabel: "查看奖励记录",
+            state: "complete"
+          };
+  const completedSteps = [taskComplete, allocationComplete, reflectionComplete].filter(Boolean).length;
+
+  return {
+    ...state.home,
+    balances: {
+      virtualGrowthAmount: state.virtualBalance.availableAmount,
+      rewardJarAmount: state.rewardJar.totalBalanceAmount,
+      currency: "CNY"
+    },
+    level: {
+      ...state.home.level,
+      progressPercent: completedSteps / 3,
+      remainingTaskCount: 3 - completedSteps
+    },
+    introduction: { dismissed: state.homeIntroductionDismissed },
+    journey: [
+      { id: "task", status: taskComplete ? "complete" : "current" },
+      { id: "allocation", status: allocationComplete ? "complete" : taskComplete ? "current" : "pending" },
+      { id: "reflection", status: reflectionComplete ? "complete" : allocationComplete ? "current" : "pending" }
+    ],
+    recommendedTask: {
+      ...state.home.recommendedTask,
+      id: focusTask.id,
+      title: focusTask.title,
+      description: focusTask.description,
+      estimatedMinutes: focusTask.estimatedMinutes
+    },
+    primaryAction
+  };
 }
 
 function respondWithTaskAction(store: DemoStore, response: Response, taskId: string, action: TaskAction) {
@@ -271,8 +349,23 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/app/home", (_request, response) => {
     response.json({
-      home: currentState(store, response).home
+      home: createTodayHome(currentState(store, response))
     });
+  });
+
+  app.post("/api/app/home/introduction", (request, response) => {
+    const dismissed = request.body?.dismissed;
+    if (typeof dismissed !== "boolean") {
+      response.status(400).json({ error: "invalid_introduction_state" });
+      return;
+    }
+    let home = createTodayHome(currentState(store, response));
+    store.updateState(currentSession(response).user.id, (state) => {
+      const nextState = { ...state, homeIntroductionDismissed: dismissed };
+      home = createTodayHome(nextState);
+      return nextState;
+    });
+    response.json({ home });
   });
 
   app.get("/api/virtual-balance", (_request, response) => {

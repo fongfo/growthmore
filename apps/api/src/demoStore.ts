@@ -53,6 +53,7 @@ export type DemoUserState = {
   complianceSummary: ComplianceSummary;
   auditLogs: AuditLogEntry[];
   home: TodayHomeSummary;
+  homeIntroductionDismissed: boolean;
   learningProgress: LearningProgress[];
 };
 
@@ -154,6 +155,7 @@ function seedUser(phone: string): StoredUser {
     },
     auditLogs: demoAuditLogs.map((item) => item.actorType === "user" ? { ...clone(item), actorId: identity.userId } : clone(item)),
     home: { ...clone(demoTodayHomeSummary), userId: identity.userId },
+    homeIntroductionDismissed: false,
     learningProgress: [{ lessonId: demoIntroLesson.id, taskId: demoIntroLesson.taskId, readSectionIds: [], quizAttemptCount: 0, quizPassed: false, score: null, feedback: null, completedAt: null, updatedAt: new Date().toISOString() }]
   };
 
@@ -256,6 +258,7 @@ export class DemoStore {
     });
     state.simulationRun = normalizeRun(state.simulationRun);
     state.simulationRuns = Array.isArray(state.simulationRuns) ? state.simulationRuns.map(normalizeRun) : [state.simulationRun];
+    if (typeof state.homeIntroductionDismissed !== "boolean") state.homeIntroductionDismissed = false;
     if (!state.rewardBudget) state.rewardBudget = clone(demoRewardCampaignBudget);
     return state;
   }
