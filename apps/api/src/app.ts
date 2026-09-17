@@ -369,12 +369,23 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   });
 
+  app.get("/api/simulation/runs", (_request, response) => {
+    response.json({ runs: currentState(store, response).simulationRuns });
+  });
+
+  app.get("/api/simulation/runs/:runId", (request, response) => {
+    const run = currentState(store, response).simulationRuns.find((item) => item.id === request.params.runId);
+    if (!run) { response.status(404).json({ error: "simulation_run_not_found" }); return; }
+    response.json({ run });
+  });
+
   app.post("/api/simulation/run", (request, response) => {
     const allocations = Array.isArray(request.body?.allocations)
       ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
       : currentState(store, response).allocationDraft.allocations;
-    const balance = currentState(store, response).virtualBalance;
-    const errors = validateSimulationAllocations(balance.availableAmount, allocations);
+    const runState = currentState(store, response);
+    const balance = runState.virtualBalance;
+    const errors = validateSimulationAllocations(balance.availableAmount + runState.allocationDraft.totalAllocatedAmount, allocations);
 
     if (errors.length > 0) {
       response.status(400).json({
@@ -385,17 +396,20 @@ export function createApp(options: CreateAppOptions = {}) {
     }
 
     const run = {
-      ...createSimulationCycleRun(createSimulationAllocationDraft(balance.availableAmount, allocations)),
+      ...createSimulationCycleRun(createSimulationAllocationDraft(balance.availableAmount + runState.allocationDraft.totalAllocatedAmount, allocations)),
       id: store.createId("simulation-run"),
-      userId: currentSession(response).user.id
+      userId: currentSession(response).user.id,
+      cycleLabel: new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Shanghai" }).format(new Date()),
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString()
     };
-    store.updateState(currentSession(response).user.id, (state) => ({ ...state, simulationRun: run }));
+    store.updateState(currentSession(response).user.id, (state) => ({ ...state, simulationRun: run, simulationRuns: [...state.simulationRuns, run] }));
     response.status(201).json({ run });
   });
 
   app.post("/api/simulation/runs/:runId/reflection", (request, response) => {
-    const storedRun = currentState(store, response).simulationRun;
-    const run = request.params.runId === storedRun.id ? storedRun : null;
+    const storedState = currentState(store, response);
+    const run = storedState.simulationRuns.find((item) => item.id === request.params.runId) ?? null;
 
     if (!run) {
       response.status(404).json({ error: "simulation_run_not_found" });
@@ -417,9 +431,24 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    response.status(201).json({
-      reflection: result
-    });
+    if (run.reviewStatus === "completed" && run.reflectionResult) {
+      response.json({ reflection: run.reflectionResult, run, idempotent: true });
+      return;
+    }
+    const completedRun = {
+      ...run,
+      reviewStatus: "completed" as const,
+      reviewCompletedAt: new Date().toISOString(),
+      rewardEligible: true,
+      rewardActivityAmount: run.startingVirtualAmount > 0 ? 1.8 : 0,
+      reflectionResult: result
+    };
+    store.updateState(currentSession(response).user.id, (state) => ({
+      ...state,
+      simulationRun: state.simulationRun.id === completedRun.id ? completedRun : state.simulationRun,
+      simulationRuns: state.simulationRuns.map((item) => item.id === completedRun.id ? completedRun : item)
+    }));
+    response.status(201).json({ reflection: result, run: completedRun, idempotent: false });
   });
   app.get("/api/rewards/jar", (_request, response) => {
     response.json({

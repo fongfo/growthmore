@@ -42,6 +42,7 @@ export type DemoUserState = {
   virtualBalanceLedger: VirtualBalanceLedgerEntry[];
   allocationDraft: SimulationAllocationDraft;
   simulationRun: SimulationCycleRun;
+  simulationRuns: SimulationCycleRun[];
   rewardJar: RewardJarSnapshot;
   rewardLedger: RewardLedgerEntry[];
   withdrawals: WithdrawalRequest[];
@@ -122,6 +123,7 @@ function seedUser(phone: string): StoredUser {
     virtualBalanceLedger: demoVirtualBalanceLedger.map(withUserId),
     allocationDraft: withUserId(demoSimulationAllocationDraft),
     simulationRun: withUserId(demoSimulationCycleRun),
+    simulationRuns: [withUserId(demoSimulationCycleRun)],
     rewardJar: {
       ...withUserId(demoRewardJar),
       ledger: demoRewardJar.ledger.map(withUserId)
@@ -238,6 +240,18 @@ export class DemoStore {
         updatedAt: new Date().toISOString()
       }];
     }
+    const normalizeRun = (run: SimulationCycleRun): SimulationCycleRun => ({
+      ...demoSimulationCycleRun,
+      ...run,
+      scenarioVersion: run.scenarioVersion ?? "education-scenario-2026-09-v1",
+      allocationSnapshot: run.allocationSnapshot ?? state.allocationDraft.allocations,
+      reviewStatus: run.reviewStatus ?? "pending",
+      reviewCompletedAt: run.reviewCompletedAt ?? null,
+      rewardEligible: run.rewardEligible ?? false,
+      reflectionResult: run.reflectionResult ?? null
+    });
+    state.simulationRun = normalizeRun(state.simulationRun);
+    state.simulationRuns = Array.isArray(state.simulationRuns) ? state.simulationRuns.map(normalizeRun) : [state.simulationRun];
     return state;
   }
 
