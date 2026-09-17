@@ -703,27 +703,96 @@ export function createApp(options: CreateAppOptions = {}) {
   app.post("/api/rewards/withdraw", (request, response) => {
     if (!requireDisclosures(store, response, ["withdrawal"])) return;
     const amount = Number(request.body?.amount);
-    const state = currentState(store, response);
-    const result = createWithdrawalRequest(state.rewardJar, state.account, amount);
-
-    if (result.errors.length > 0) {
+    const idempotencyKey = typeof request.body?.idempotencyKey === "string" ? request.body.idempotencyKey.trim().slice(0, 100) : "";
+    const userId = currentSession(response).user.id;
+    const withdrawalId = store.createId("withdrawal");
+    let withdrawal = null as ReturnType<typeof createWithdrawalRequest>["request"];
+    let errors: string[] = [];
+    let idempotent = false;
+    store.updateState(userId, (state) => {
+      const existing = idempotencyKey ? state.withdrawals.find((item) => item.idempotencyKey === idempotencyKey) : undefined;
+      if (existing) {
+        withdrawal = existing;
+        idempotent = true;
+        return state;
+      }
+      const result = createWithdrawalRequest(state.rewardJar, state.account, amount);
+      if (result.errors.length > 0 || !result.request) {
+        errors = result.errors;
+        return state;
+      }
+      let remaining = result.request.amount;
+      const heldIds: string[] = [];
+      const splitEntries: RewardLedgerEntry[] = [];
+      const rewardLedger = state.rewardLedger.map((entry) => {
+        if (entry.status !== "available" || remaining <= 0) return entry;
+        const heldAmount = Math.min(entry.amount, remaining);
+        remaining = Number((remaining - heldAmount).toFixed(2));
+        if (heldAmount === entry.amount) {
+          heldIds.push(entry.id);
+          return { ...entry, status: "withdrawal_pending" as const, sourceId: withdrawalId };
+        }
+        const heldEntry = {
+          ...entry,
+          id: store.createId("reward-hold"),
+          amount: heldAmount,
+          status: "withdrawal_pending" as const,
+          sourceType: "withdrawal" as const,
+          sourceId: withdrawalId,
+          description: "提现申请审核中，奖励已冻结。",
+          lockReason: "等待模拟人工审核与结算。"
+        };
+        heldIds.push(heldEntry.id);
+        splitEntries.push(heldEntry);
+        return { ...entry, amount: Number((entry.amount - heldAmount).toFixed(2)) };
+      });
+      if (remaining > 0) {
+        errors = ["Withdrawal amount cannot exceed available reward balance."];
+        return state;
+      }
+      const nextLedger = [...rewardLedger, ...splitEntries];
+      const rewardJar = createRewardJarSnapshot(nextLedger);
+      const now = new Date().toISOString();
+      withdrawal = {
+        ...result.request,
+        id: withdrawalId,
+        userId,
+        idempotencyKey: idempotencyKey || null,
+        fundsStatus: "frozen",
+        rewardLedgerEntryIds: heldIds,
+        createdAt: now,
+        submittedAt: now,
+        updatedAt: now
+      };
+      return {
+        ...state,
+        rewardLedger: nextLedger,
+        rewardJar: { ...rewardJar, userId },
+        withdrawals: [withdrawal, ...state.withdrawals],
+        auditLogs: [{
+          id: store.createId("audit"),
+          actorType: "user",
+          actorId: userId,
+          action: "withdrawal.submitted",
+          entityType: "withdrawal_request",
+          entityId: withdrawalId,
+          occurredAt: now,
+          ipAddressMasked: "127.0.*.*",
+          userAgent: String(request.get("user-agent") ?? "growthmore-mobile").slice(0, 120),
+          summary: "用户提交模拟提现申请，奖励已冻结。",
+          metadata: { amount: result.request.amount, idempotencyKey: idempotencyKey || null }
+        }, ...state.auditLogs],
+        home: { ...state.home, balances: { ...state.home.balances, rewardJarAmount: rewardJar.totalBalanceAmount } }
+      };
+    });
+    if (errors.length > 0 || !withdrawal) {
       response.status(400).json({
         error: "invalid_withdrawal_request",
-        messages: result.errors
+        messages: errors
       });
       return;
     }
-
-    const withdrawal = {
-      ...result.request!,
-      id: store.createId("withdrawal"),
-      userId: currentSession(response).user.id
-    };
-    store.updateState(currentSession(response).user.id, (value) => ({
-      ...value,
-      withdrawals: [withdrawal, ...value.withdrawals]
-    }));
-    response.status(201).json({ withdrawal });
+    response.status(idempotent ? 200 : 201).json({ withdrawal, idempotent });
   });
 
   app.get("/api/withdrawals", (_request, response) => {
@@ -732,28 +801,63 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   });
 
-  for (const action of ["approve", "reject", "retry"] as const) {
+  for (const action of ["approve", "reject", "retry", "settle", "fail", "cancel"] as const) {
     app.post(`/api/admin/withdrawals/:withdrawalId/${action}`, (request, response) => {
-      const withdrawal = currentState(store, response).withdrawals.find(
-        (item) => item.id === request.params.withdrawalId
-      );
-      if (!withdrawal) {
+      const userId = currentSession(response).user.id;
+      let updatedWithdrawal = null as ReturnType<typeof applyWithdrawalReviewAction>["request"];
+      let transitionError: string | null = null;
+      let found = false;
+      store.updateState(userId, (state) => {
+        const withdrawal = state.withdrawals.find((item) => item.id === request.params.withdrawalId);
+        if (!withdrawal) return state;
+        found = true;
+        const result = applyWithdrawalReviewAction(withdrawal, action, {
+          reason: request.body?.reason,
+          reviewerId: request.body?.reviewerId,
+          recoverable: request.body?.recoverable
+        });
+        if (result.error || !result.request) {
+          transitionError = result.error;
+          return state;
+        }
+        updatedWithdrawal = result.request;
+        const releaseFunds = result.request.fundsStatus === "released" && withdrawal.fundsStatus === "frozen";
+        const settleFunds = result.request.fundsStatus === "paid" && withdrawal.fundsStatus === "frozen";
+        const rewardLedger = state.rewardLedger.map((entry) => withdrawal.rewardLedgerEntryIds.includes(entry.id)
+          ? { ...entry, status: releaseFunds ? "available" as const : settleFunds ? "paid" as const : entry.status, lockReason: releaseFunds || settleFunds ? null : entry.lockReason }
+          : entry);
+        const rewardJar = createRewardJarSnapshot(rewardLedger);
+        const now = new Date().toISOString();
+        return {
+          ...state,
+          rewardLedger,
+          rewardJar: { ...rewardJar, userId },
+          withdrawals: state.withdrawals.map((item) => item.id === withdrawal.id ? result.request! : item),
+          auditLogs: [{
+            id: store.createId("audit"),
+            actorType: "admin",
+            actorId: result.request.reviewerId ?? "reviewer-demo-001",
+            action: "withdrawal.reviewed",
+            entityType: "withdrawal_request",
+            entityId: withdrawal.id,
+            occurredAt: now,
+            ipAddressMasked: "127.0.*.*",
+            userAgent: String(request.get("user-agent") ?? "growthmore-admin").slice(0, 120),
+            summary: "模拟提现状态更新为 " + result.request.status + "。",
+            metadata: { action, fundsStatus: result.request.fundsStatus }
+          }, ...state.auditLogs],
+          home: { ...state.home, balances: { ...state.home.balances, rewardJarAmount: rewardJar.totalBalanceAmount } }
+        };
+      });
+      if (!found) {
         response.status(404).json({ error: "withdrawal_not_found" });
         return;
       }
-      const result = applyWithdrawalReviewAction(withdrawal, action, {
-        reason: request.body?.reason,
-        reviewerId: request.body?.reviewerId
-      });
-      if (result.error || !result.request) {
-        response.status(409).json({ error: "invalid_withdrawal_transition", message: result.error });
+      if (transitionError || !updatedWithdrawal) {
+        response.status(409).json({ error: "invalid_withdrawal_transition", message: transitionError });
         return;
       }
-      store.updateState(currentSession(response).user.id, (state) => ({
-        ...state,
-        withdrawals: state.withdrawals.map((item) => item.id === withdrawal.id ? result.request! : item)
-      }));
-      response.json({ action, withdrawal: result.request });
+      response.json({ action, withdrawal: updatedWithdrawal });
     });
   }
   app.get("/api/tasks", (request, response) => {

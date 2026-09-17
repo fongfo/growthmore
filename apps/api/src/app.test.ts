@@ -780,7 +780,7 @@ describe("withdrawals", () => {
   it("submits a withdrawal request for manual review", async () => {
     const app = createApp();
     await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
-    const response = await request(app).post("/api/rewards/withdraw").send({ amount: 5 });
+    const response = await request(app).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "mobile-request-1" });
 
     expect(response.status).toBe(201);
     expect(response.body.withdrawal).toMatchObject({
@@ -790,6 +790,95 @@ describe("withdrawals", () => {
       estimatedArrivalLabel: "审核通过后 T+1 入账"
     });
     expect(response.body.withdrawal.disclosure).toContain("不接真实打款");
+    expect(response.body.withdrawal.fundsStatus).toBe("frozen");
+    expect(app.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(0.7);
+    expect(app.locals.demoStore.getState("mock-user-001").rewardLedger
+      .filter((entry: { status: string }) => entry.status === "withdrawal_pending")
+      .reduce((total: number, entry: { amount: number }) => total + entry.amount, 0)).toBe(5);
+  });
+
+  it("deduplicates concurrent submissions and freezes rewards only once", async () => {
+    const app = createApp();
+    await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+    const payload = { amount: 5, idempotencyKey: "same-mobile-request" };
+    const [first, second] = await Promise.all([
+      request(app).post("/api/rewards/withdraw").send(payload),
+      request(app).post("/api/rewards/withdraw").send(payload)
+    ]);
+    expect([first.status, second.status].sort()).toEqual([200, 201]);
+    expect(first.body.withdrawal.id).toBe(second.body.withdrawal.id);
+    const state = app.locals.demoStore.getState("mock-user-001");
+    expect(state.withdrawals.filter((item: { idempotencyKey: string }) => item.idempotencyKey === payload.idempotencyKey)).toHaveLength(1);
+    expect(state.rewardJar.availableAmount).toBe(0.7);
+  });
+
+  it("settles simulated payouts and releases final failures exactly once", async () => {
+    const settledApp = createApp();
+    await request(settledApp).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+    const submitted = await request(settledApp).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "settle-request" });
+    const id = submitted.body.withdrawal.id;
+    await request(settledApp).post("/api/admin/withdrawals/" + id + "/approve").expect(200);
+    const settled = await request(settledApp).post("/api/admin/withdrawals/" + id + "/settle").expect(200);
+    expect(settled.body.withdrawal).toMatchObject({ status: "paid", fundsStatus: "paid" });
+    expect(settledApp.locals.demoStore.getState("mock-user-001").rewardJar.totalBalanceAmount).toBe(8.5);
+
+    const failedApp = createApp();
+    await request(failedApp).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+    const failedSubmission = await request(failedApp).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "final-failure" });
+    const failedId = failedSubmission.body.withdrawal.id;
+    await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/approve").expect(200);
+    const failed = await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/fail").send({ recoverable: false }).expect(200);
+    expect(failed.body.withdrawal).toMatchObject({ status: "failed", fundsStatus: "released", failureRecoverable: false });
+    expect(failedApp.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
+    await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/fail").send({ recoverable: false }).expect(409);
+    expect(failedApp.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
+  });
+
+  it("keeps funds frozen for recoverable failure and retry", async () => {
+    const app = createApp();
+    await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+    const submitted = await request(app).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "retry-request" });
+    const id = submitted.body.withdrawal.id;
+    await request(app).post("/api/admin/withdrawals/" + id + "/approve").expect(200);
+    const failed = await request(app).post("/api/admin/withdrawals/" + id + "/fail").send({ recoverable: true }).expect(200);
+    expect(failed.body.withdrawal).toMatchObject({ status: "failed", fundsStatus: "frozen", failureRecoverable: true });
+    const retried = await request(app).post("/api/admin/withdrawals/" + id + "/retry").expect(200);
+    expect(retried.body.withdrawal).toMatchObject({ status: "under_review", fundsStatus: "frozen" });
+    expect(app.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(0.7);
+  });
+
+  it("releases rejected and cancelled requests without increasing balance twice", async () => {
+    for (const action of ["reject", "cancel"] as const) {
+      const app = createApp();
+      await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+      const submitted = await request(app).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "release-" + action });
+      const id = submitted.body.withdrawal.id;
+      await request(app).post("/api/admin/withdrawals/" + id + "/" + action).expect(200);
+      expect(app.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
+      await request(app).post("/api/admin/withdrawals/" + id + "/" + action).expect(409);
+      expect(app.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
+    }
+  });
+
+  it("persists a frozen withdrawal and its idempotency key after restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "growthmore-withdrawal-"));
+    const databasePath = join(directory, "demo.sqlite");
+    try {
+      const firstApp = createApp({ databasePath });
+      await request(firstApp).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+      const submitted = await request(firstApp).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "persistent-request" });
+      const id = submitted.body.withdrawal.id;
+      firstApp.locals.demoStore.close();
+
+      const restartedApp = createApp({ databasePath });
+      const repeated = await request(restartedApp).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "persistent-request" });
+      expect(repeated.status).toBe(200);
+      expect(repeated.body.withdrawal.id).toBe(id);
+      expect(restartedApp.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(0.7);
+      restartedApp.locals.demoStore.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("rejects invalid withdrawal requests", async () => {

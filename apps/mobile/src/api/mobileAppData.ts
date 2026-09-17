@@ -108,8 +108,8 @@ async function postJson<T>(baseUrl: string, path: string, body: unknown, fetcher
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  const payload = await response.json() as T & { message?: string; reflection?: { messages?: string[] } };
-  if (!response.ok) throw new Error(payload.message ?? payload.reflection?.messages?.join(" ") ?? ("POST " + path + " failed with " + response.status));
+  const payload = await response.json() as T & { message?: string; messages?: string[]; reflection?: { messages?: string[] } };
+  if (!response.ok) throw new Error(payload.message ?? payload.messages?.join(" ") ?? payload.reflection?.messages?.join(" ") ?? ("POST " + path + " failed with " + response.status));
   return payload;
 }
 
@@ -127,6 +127,20 @@ export function submitLearningQuiz(quizId: string, answerId: string, apiBaseUrl 
 
 export function updateHomeIntroduction(dismissed: boolean, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
   return postJson<{ home: TodayHomeSummary }>(apiBaseUrl, "/api/app/home/introduction", { dismissed }, fetcher);
+}
+
+export function submitWithdrawal(
+  amount: number,
+  idempotencyKey: string,
+  apiBaseUrl = defaultApiBaseUrl,
+  fetcher: Fetcher = fetch
+) {
+  return postJson<{ withdrawal: WithdrawalRequest; idempotent: boolean }>(
+    apiBaseUrl,
+    "/api/rewards/withdraw",
+    { amount, idempotencyKey },
+    fetcher
+  );
 }
 
 export async function saveSimulationAllocations(
