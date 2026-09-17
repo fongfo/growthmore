@@ -359,7 +359,9 @@ describe("simulation learning cycle and reflection", () => {
       id: "simulation-run-2026-08-w4",
       cycleLabel: "2026 年 8 月第 4 周学习周期",
       startingVirtualAmount: 1250,
-      rewardActivityAmount: 1.8,
+      rewardActivityAmount: 0,
+      rewardEligible: false,
+      reviewStatus: "pending",
       riskConfirmationRequired: true
     });
     expect(response.body.run.disclosure).toContain("不进入真实奖励计算");
@@ -379,7 +381,9 @@ describe("simulation learning cycle and reflection", () => {
     expect(response.body.run).toMatchObject({
       startingVirtualAmount: 700,
       riskConfirmationRequired: false,
-      rewardActivityAmount: 1.8
+      rewardActivityAmount: 0,
+      rewardEligible: false,
+      scenarioVersion: "education-scenario-2026-09-v1"
     });
     expect(response.body.run.productResults).toHaveLength(2);
   });
@@ -420,6 +424,52 @@ describe("simulation learning cycle and reflection", () => {
       learningCompletionCoefficient: 1,
       acceptedRiskConfirmation: true
     });
+    expect(response.body.run).toMatchObject({ reviewStatus: "completed", rewardEligible: true, rewardActivityAmount: 1.8 });
+  });
+
+  it("returns cycle history and keeps repeated completion idempotent", async () => {
+    const app = createApp();
+    const created = await request(app).post("/api/simulation/run").send({});
+    const runId = created.body.run.id as string;
+    const submission = {
+      answers: [
+        { questionId: "highest-volatility", answer: "黄金波动最大" },
+        { questionId: "allocation-lesson", answer: "分散配置可以降低集中风险" },
+        { questionId: "reward-boundary", answer: "活动奖励来自银行预算和规则" }
+      ],
+      riskConfirmationAccepted: true
+    };
+    const first = await request(app).post(`/api/simulation/runs/${runId}/reflection`).send(submission);
+    const repeated = await request(app).post(`/api/simulation/runs/${runId}/reflection`).send(submission);
+    const detail = await request(app).get(`/api/simulation/runs/${runId}`);
+    const history = await request(app).get("/api/simulation/runs");
+    expect(first.status).toBe(201);
+    expect(repeated.body.idempotent).toBe(true);
+    expect(detail.body.run).toMatchObject({ id: runId, reviewStatus: "completed", rewardEligible: true });
+    expect(history.body.runs.map((run: { id: string }) => run.id)).toContain(runId);
+  });
+
+  it("restores a completed cycle after restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "growthmore-cycle-"));
+    const databasePath = join(directory, "demo.sqlite");
+    try {
+      const app = createApp({ databasePath });
+      const created = await request(app).post("/api/simulation/run").send({});
+      const runId = created.body.run.id as string;
+      await request(app).post(`/api/simulation/runs/${runId}/reflection`).send({
+        answers: [
+          { questionId: "highest-volatility", answer: "黄金" },
+          { questionId: "allocation-lesson", answer: "分散配置降低集中风险" },
+          { questionId: "reward-boundary", answer: "奖励来自活动规则和预算" }
+        ],
+        riskConfirmationAccepted: true
+      }).expect(201);
+      app.locals.demoStore.close();
+      const restarted = createApp({ databasePath });
+      const detail = await request(restarted).get(`/api/simulation/runs/${runId}`);
+      expect(detail.body.run).toMatchObject({ reviewStatus: "completed", rewardEligible: true });
+      restarted.locals.demoStore.close();
+    } finally { rmSync(directory, { recursive: true, force: true }); }
   });
 
   it("returns 404 for unknown simulation runs", async () => {

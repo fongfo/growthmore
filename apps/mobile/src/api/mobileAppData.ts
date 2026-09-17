@@ -25,6 +25,8 @@ import {
   type SimulationAllocation,
   type SimulationAllocationDraft,
   type SimulationCycleRun,
+  type SimulationReflectionSubmission,
+  type SimulationReflectionResult,
   type SimulationProduct,
   type TaskBoardSummary,
   type TaskAction,
@@ -96,8 +98,8 @@ async function postJson<T>(baseUrl: string, path: string, body: unknown, fetcher
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  const payload = await response.json() as T & { message?: string };
-  if (!response.ok) throw new Error(payload.message ?? ("POST " + path + " failed with " + response.status));
+  const payload = await response.json() as T & { message?: string; reflection?: { messages?: string[] } };
+  if (!response.ok) throw new Error(payload.message ?? payload.reflection?.messages?.join(" ") ?? ("POST " + path + " failed with " + response.status));
   return payload;
 }
 
@@ -127,6 +129,18 @@ export async function saveSimulationAllocations(
   const payload = await response.json() as { allocationDraft: SimulationAllocationDraft; messages?: string[] };
   if (!response.ok) throw new Error(payload.messages?.join(" ") ?? "Unable to save allocation.");
   return payload;
+}
+
+export async function runSimulationCycle(apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch): Promise<{ run: SimulationCycleRun }> {
+  return postJson<{ run: SimulationCycleRun }>(apiBaseUrl, "/api/simulation/run", {}, fetcher);
+}
+
+export async function submitSimulationReflection(
+  submission: SimulationReflectionSubmission,
+  apiBaseUrl = defaultApiBaseUrl,
+  fetcher: Fetcher = fetch
+): Promise<{ reflection: SimulationReflectionResult; run: SimulationCycleRun; idempotent: boolean }> {
+  return postJson(apiBaseUrl, "/api/simulation/runs/" + encodeURIComponent(submission.runId) + "/reflection", submission, fetcher);
 }
 
 export const fallbackMobileAppData: MobileAppData = {

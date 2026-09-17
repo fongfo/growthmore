@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runTaskAction, saveSimulationAllocations, submitLearningQuiz } from "./mobileAppData";
+import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -111,5 +111,23 @@ describe("mobile API data loader", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ allocations })
     });
+  });
+
+  it("runs and submits a persisted learning-cycle review", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ run: fallbackMobileAppData.simulationRun, reflection: { completed: true } }));
+    await runSimulationCycle(defaultApiBaseUrl, fetcher);
+    await submitSimulationReflection({
+      runId: fallbackMobileAppData.simulationRun.id,
+      answers: [{ questionId: "highest-volatility", answer: "gold" }],
+      riskConfirmationAccepted: true
+    }, defaultApiBaseUrl, fetcher);
+    expect(fetcher).toHaveBeenNthCalledWith(1, defaultApiBaseUrl + "/api/simulation/run", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: "{}"
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(
+      2,
+      defaultApiBaseUrl + "/api/simulation/runs/" + fallbackMobileAppData.simulationRun.id + "/reflection",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 });

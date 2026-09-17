@@ -284,6 +284,12 @@ export type SimulationCycleRun = {
   riskConfirmationStatements: string[];
   productResults: SimulationProductCycleResult[];
   reflectionQuestions: SimulationReflectionQuestion[];
+  scenarioVersion: string;
+  allocationSnapshot: SimulationAllocation[];
+  reviewStatus: "pending" | "completed";
+  reviewCompletedAt: string | null;
+  rewardEligible: boolean;
+  reflectionResult: SimulationReflectionResult | null;
 };
 
 export type SimulationReflectionSubmission = {
@@ -1170,13 +1176,19 @@ export function createSimulationCycleRun(
     simulatedEndingVirtualAmount,
     simulatedChangeAmount,
     simulatedChangePercent,
-    rewardActivityAmount: allocationDraft.totalAllocatedAmount > 0 ? 1.8 : 0,
+    rewardActivityAmount: 0,
     rewardCalculationBasis: "活动奖励按完成学习周期、复盘问题和风险确认计算，不使用模拟涨跌作为奖励因子。",
     disclosure: "模拟涨跌只用于教育解释，不进入真实奖励计算。奖励金由银行活动预算提供，实际领取以活动规则和审核结果为准。",
     riskConfirmationRequired: hasHighVolatilityAllocation,
     riskConfirmationStatements: demoSimulationRiskConfirmationStatements,
     productResults,
-    reflectionQuestions: demoSimulationReflectionQuestions
+    reflectionQuestions: demoSimulationReflectionQuestions,
+    scenarioVersion: "education-scenario-2026-09-v1",
+    allocationSnapshot: allocationDraft.allocations,
+    reviewStatus: "pending",
+    reviewCompletedAt: null,
+    rewardEligible: false,
+    reflectionResult: null
   };
 }
 
@@ -1190,8 +1202,15 @@ export function validateSimulationReflection(
   );
 
   for (const question of run.reflectionQuestions) {
+    const answer = submission.answers.find((item) => item.questionId === question.id)?.answer.trim() ?? "";
     if (!answeredQuestionIds.has(question.id)) {
       messages.push(`Reflection answer is required: ${question.id}`);
+    } else if (question.id === "highest-volatility" && !/黄金|gold/i.test(answer)) {
+      messages.push("Review the result: gold had the highest volatility in this scenario.");
+    } else if (question.id === "allocation-lesson" && answer.length < 4) {
+      messages.push("Explain one allocation lesson in a little more detail.");
+    } else if (question.id === "reward-boundary" && !/活动|规则|预算|campaign|rule|budget/i.test(answer)) {
+      messages.push("Rewards come from campaign rules and bank budget, not simulated returns.");
     }
   }
 
@@ -1263,7 +1282,7 @@ export const demoRewardLedger: RewardLedgerEntry[] = [
     id: "rwd-003",
     userId: demoMockSession.user.id,
     status: "pending",
-    amount: demoSimulationCycleRun.rewardActivityAmount,
+    amount: 1.8,
     currency: "CNY",
     sourceType: "learning_cycle",
     sourceId: demoSimulationCycleRun.id,

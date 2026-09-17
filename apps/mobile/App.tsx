@@ -3,7 +3,6 @@ import { StatusBar } from "expo-status-bar";
 import { Pressable, SafeAreaView, StyleSheet, TextInput, View } from "react-native";
 import {
   createSimulationAllocationDraft,
-  createSimulationCycleRun,
   demoIntroLesson,
   validateWithdrawalRequest,
   type SimulationAllocation,
@@ -24,7 +23,7 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
-import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runTaskAction, saveSimulationAllocations, submitLearningQuiz } from "./src/api/mobileAppData";
+import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
@@ -175,6 +174,9 @@ function MobileApp() {
   const [locale, setLocale] = useState<Locale>("zh-CN");
   const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(fallbackMobileAppData.simulationRun);
   const [reflectionComplete, setReflectionComplete] = useState(false);
+  const [reflectionAnswers, setReflectionAnswers] = useState<Record<string, string>>({});
+  const [reflectionRiskAccepted, setReflectionRiskAccepted] = useState(false);
+  const [reflectionState, setReflectionState] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null });
   const [taskFilter, setTaskFilter] = useState<TaskFilterId>("all");
   const [selectedTaskId, setSelectedTaskId] = useState<string>("daily-check-in");
   const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
@@ -190,7 +192,8 @@ function MobileApp() {
     setAllocationDraft(data.allocationDraft);
     setAllocationInputs(Object.fromEntries(data.allocationDraft.allocations.map((item) => [item.productId, String(item.amount)])));
     setSimulationRun(data.simulationRun);
-    setReflectionComplete(false);
+    setReflectionComplete(data.simulationRun.reviewStatus === "completed");
+    setReflectionRiskAccepted(data.simulationRun.reflectionResult?.acceptedRiskConfirmation ?? false);
   }, [data.allocationDraft, data.simulationRun]);
 
   useEffect(() => {
@@ -230,8 +233,6 @@ function MobileApp() {
       setAllocationDraft(nextDraft);
       setAllocationInputs(Object.fromEntries(example.allocations.map((item) => [item.productId, String(item.amount)])));
       setAllocationSaveState({ loading: false, error: null, saved: false });
-      setSimulationRun(createSimulationCycleRun(nextDraft));
-      setReflectionComplete(false);
     }
   };
 
@@ -240,8 +241,6 @@ function MobileApp() {
     setAllocationDraft(nextDraft);
     setAllocationInputs({});
     setAllocationSaveState({ loading: false, error: null, saved: false });
-    setSimulationRun(createSimulationCycleRun(nextDraft));
-    setReflectionComplete(false);
   };
 
   const getAllocationForProduct = (productId: string): SimulationAllocation =>
@@ -250,9 +249,20 @@ function MobileApp() {
       amount: 0,
       percent: 0
     };
-  const handleRunLearningCycle = () => {
-    setSimulationRun(createSimulationCycleRun(allocationDraft));
-    setReflectionComplete(false);
+  const handleRunLearningCycle = async () => {
+    if (isFallback) { setReflectionState({ loading: false, error: t(locale, "task.error.demoMode") }); return; }
+    setReflectionState({ loading: true, error: null });
+    try {
+      const result = await runSimulationCycle();
+      setSimulationRun(result.run);
+      setReflectionComplete(false);
+      setReflectionAnswers({});
+      setReflectionRiskAccepted(false);
+    } catch (error) {
+      setReflectionState({ loading: false, error: error instanceof Error ? error.message : t(locale, "run.error") });
+      return;
+    }
+    setReflectionState({ loading: false, error: null });
   };
 
   const handleAllocationInput = (productId: string, value: string) => {
@@ -280,8 +290,22 @@ function MobileApp() {
     }
   };
 
-  const handleCompleteReflection = () => {
-    setReflectionComplete(true);
+  const handleCompleteReflection = async () => {
+    if (!simulationRun) return;
+    setReflectionState({ loading: true, error: null });
+    try {
+      const result = await submitSimulationReflection({
+        runId: simulationRun.id,
+        answers: simulationRun.reflectionQuestions.map((question) => ({ questionId: question.id, answer: reflectionAnswers[question.id] ?? "" })),
+        riskConfirmationAccepted: reflectionRiskAccepted
+      });
+      setSimulationRun(result.run);
+      setReflectionComplete(result.reflection.completed);
+    } catch (error) {
+      setReflectionState({ loading: false, error: error instanceof Error ? error.message : t(locale, "run.reflectionError") });
+      return;
+    }
+    setReflectionState({ loading: false, error: null });
   };
 
   const handleTaskFilterChange = (filterId: TaskFilterId) => {
@@ -657,7 +681,7 @@ function MobileApp() {
                 {t(locale, "run.changeSummary", { percent: localizedSimulationRun ? formatSignedPercent(localizedSimulationRun.simulatedChangePercent) : "--", reward: formatCurrency(locale, localizedSimulationRun?.rewardActivityAmount ?? 0) })}
               </AppText>
             </View>
-            <Button label={t(locale, "action.runCycle")} onPress={handleRunLearningCycle} style={styles.runButton} />
+            <Button label={t(locale, "action.runCycle")} loading={reflectionState.loading} onPress={() => void handleRunLearningCycle()} style={styles.runButton} />
           </View>
 
           <View style={styles.resultList}>
@@ -691,6 +715,15 @@ function MobileApp() {
                 <AppText color="textSecondary" variant="caption">
                   {question.helperText}
                 </AppText>
+                <TextInput
+                  accessibilityLabel={question.prompt}
+                  editable={!reflectionComplete}
+                  multiline
+                  onChangeText={(answer) => setReflectionAnswers((answers) => ({ ...answers, [question.id]: answer }))}
+                  placeholder={t(locale, "run.answerPlaceholder")}
+                  style={styles.reflectionInput}
+                  value={reflectionAnswers[question.id] ?? ""}
+                />
               </View>
             ))}
           </View>
@@ -698,11 +731,12 @@ function MobileApp() {
           {localizedSimulationRun?.riskConfirmationRequired ? (
             <View style={styles.confirmationList}>
               {localizedSimulationRun.riskConfirmationStatements.map((statement) => (
-                <View key={statement} style={styles.confirmationItem}>
-                  <AppIcon color="danger" name="shield-alert-outline" size="sm" />
-                  <AppText color="textSecondary" variant="caption">{statement}</AppText>
-                </View>
+                <View key={statement} style={styles.confirmationItem}><AppIcon color="danger" name="shield-alert-outline" size="sm" /><AppText color="textSecondary" variant="caption">{statement}</AppText></View>
               ))}
+              <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: reflectionRiskAccepted }} disabled={reflectionComplete} onPress={() => setReflectionRiskAccepted((accepted) => !accepted)} style={styles.riskCheckRow}>
+                <AppIcon color={reflectionRiskAccepted ? "success" : "textSecondary"} name={reflectionRiskAccepted ? "checkbox-marked-outline" : "checkbox-blank-outline"} size="md" />
+                <AppText variant="bodyStrong">{t(locale, "run.confirmRisk")}</AppText>
+              </Pressable>
             </View>
           ) : null}
 
@@ -710,7 +744,8 @@ function MobileApp() {
           <AppText color="textSecondary" variant="caption">
             {localizedSimulationRun?.rewardCalculationBasis}
           </AppText>
-          <Button label={reflectionComplete ? t(locale, "action.reflectionComplete") : t(locale, "action.completeReflection")} onPress={handleCompleteReflection} variant={reflectionComplete ? "secondary" : "primary"} />
+          {reflectionState.error ? <View style={styles.rejectBox}><AppText color="danger" variant="caption">{reflectionState.error}</AppText></View> : null}
+          <Button disabled={reflectionComplete} label={reflectionComplete ? t(locale, "action.reflectionComplete") : t(locale, "action.completeReflection")} loading={reflectionState.loading} onPress={() => void handleCompleteReflection()} variant={reflectionComplete ? "secondary" : "primary"} />
         </Card>
         ) : null}
 
@@ -1366,6 +1401,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: spacing.xs,
     padding: spacing.md
+  },
+  reflectionInput: {
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.borderStrong,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.light.textPrimary,
+    minHeight: 72,
+    padding: spacing.md,
+    textAlignVertical: "top"
   },
   confirmationList: {
     backgroundColor: colors.light.dangerSoft,

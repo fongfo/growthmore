@@ -259,7 +259,8 @@ describe("simulation learning cycle and reflection", () => {
   it("keeps simulated changes out of reward activity calculation", () => {
     expect(demoSimulationCycleRun.disclosure).toContain("不进入真实奖励计算");
     expect(demoSimulationCycleRun.rewardCalculationBasis).toContain("不使用模拟涨跌");
-    expect(demoSimulationCycleRun.rewardActivityAmount).toBe(1.8);
+    expect(demoSimulationCycleRun.rewardActivityAmount).toBe(0);
+    expect(demoSimulationCycleRun.rewardEligible).toBe(false);
   });
 
   it("requires high-volatility confirmation when gold is allocated", () => {
@@ -275,10 +276,11 @@ describe("simulation learning cycle and reflection", () => {
     });
     const complete = validateSimulationReflection(demoSimulationCycleRun, {
       runId: demoSimulationCycleRun.id,
-      answers: demoSimulationCycleRun.reflectionQuestions.map((question) => ({
-        questionId: question.id,
-        answer: "已理解"
-      })),
+      answers: [
+        { questionId: "highest-volatility", answer: "黄金" },
+        { questionId: "allocation-lesson", answer: "分散配置降低风险" },
+        { questionId: "reward-boundary", answer: "活动奖励来自规则和预算" }
+      ],
       riskConfirmationAccepted: true
     });
 
