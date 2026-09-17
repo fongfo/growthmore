@@ -329,6 +329,18 @@ export type RewardLedgerEntry = {
   createdAt: string;
 };
 
+export type RewardCampaignBudget = {
+  programId: string;
+  budgetBatchId: string;
+  activityRuleVersion: string;
+  totalBudgetAmount: number;
+  reservedAmount: number;
+  dailyBudgetAmount: number;
+  reservedTodayAmount: number;
+  userDailyLimitAmount: number;
+  userMonthlyLimitAmount: number;
+};
+
 export type RewardJarSnapshot = {
   userId: MockUserSession["user"]["id"];
   currency: "CNY";
@@ -1327,6 +1339,18 @@ export const demoRewardLedger: RewardLedgerEntry[] = [
     createdAt: "2026-07-30T10:00:00+08:00"
   }
 ];
+
+export const demoRewardCampaignBudget: RewardCampaignBudget = {
+  programId: "demo-program-2026-09",
+  budgetBatchId: "budget-2026-09-learning-cycle",
+  activityRuleVersion: "reward-learning-v1",
+  totalBudgetAmount: 1000,
+  reservedAmount: 126,
+  dailyBudgetAmount: 100,
+  reservedTodayAmount: 18,
+  userDailyLimitAmount: 5,
+  userMonthlyLimitAmount: 20
+};
 
 function createEmptyRewardStatusCounts(): Record<RewardStatus, number> {
   return {

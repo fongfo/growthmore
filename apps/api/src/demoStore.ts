@@ -9,6 +9,7 @@ import {
   demoLinkedBankAccount,
   demoMockSession,
   demoRewardJar,
+  demoRewardCampaignBudget,
   demoRewardLedger,
   demoSimulationAllocationDraft,
   demoSimulationCycleRun,
@@ -25,6 +26,7 @@ import {
   type LearningProgress,
   type MockUserSession,
   type RewardJarSnapshot,
+  type RewardCampaignBudget,
   type RewardLedgerEntry,
   type SimulationAllocationDraft,
   type SimulationCycleRun,
@@ -45,6 +47,7 @@ export type DemoUserState = {
   simulationRuns: SimulationCycleRun[];
   rewardJar: RewardJarSnapshot;
   rewardLedger: RewardLedgerEntry[];
+  rewardBudget: RewardCampaignBudget;
   withdrawals: WithdrawalRequest[];
   disclosureAcceptances: DisclosureAcceptance[];
   complianceSummary: ComplianceSummary;
@@ -129,6 +132,7 @@ function seedUser(phone: string): StoredUser {
       ledger: demoRewardJar.ledger.map(withUserId)
     },
     rewardLedger: demoRewardLedger.map(withUserId),
+    rewardBudget: clone(demoRewardCampaignBudget),
     withdrawals: demoWithdrawalRequests.map((item) => ({
       ...withUserId(item),
       withdrawalAccount: {
@@ -252,6 +256,7 @@ export class DemoStore {
     });
     state.simulationRun = normalizeRun(state.simulationRun);
     state.simulationRuns = Array.isArray(state.simulationRuns) ? state.simulationRuns.map(normalizeRun) : [state.simulationRun];
+    if (!state.rewardBudget) state.rewardBudget = clone(demoRewardCampaignBudget);
     return state;
   }
 
