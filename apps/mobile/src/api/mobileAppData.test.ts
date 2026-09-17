@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./mobileAppData";
+import { acceptDisclosure, defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -84,6 +84,18 @@ describe("mobile API data loader", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dismissed: true })
+    });
+  });
+
+  it("accepts a specific disclosure version through the mobile channel", async () => {
+    const acceptance = fallbackMobileAppData.complianceSummary.acceptedDisclosures[0]!;
+    const fetcher = vi.fn(async () => jsonResponse({ acceptance, idempotent: false }, true, 201));
+    const result = await acceptDisclosure(acceptance.disclosureId, defaultApiBaseUrl, fetcher);
+    expect(result.acceptance.disclosureId).toBe(acceptance.disclosureId);
+    expect(fetcher).toHaveBeenCalledWith(defaultApiBaseUrl + "/api/disclosures/" + acceptance.disclosureId + "/accept", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: "mobile" })
     });
   });
 

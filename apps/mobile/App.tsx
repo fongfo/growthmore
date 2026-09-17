@@ -23,7 +23,7 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
-import { fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./src/api/mobileAppData";
+import { acceptDisclosure, fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
@@ -188,6 +188,8 @@ function MobileApp() {
     message: string | null;
   }>({ error: null, loading: false, message: null });
   const [introductionLoading, setIntroductionLoading] = useState(false);
+  const [selectedDisclosureIds, setSelectedDisclosureIds] = useState<string[]>([]);
+  const [disclosureAction, setDisclosureAction] = useState<{ loading: boolean; error: string | null; message: string | null }>({ loading: false, error: null, message: null });
 
   useEffect(() => {
     setAllocationDraft(data.allocationDraft);
@@ -219,7 +221,6 @@ function MobileApp() {
   const withdrawalErrors = validateWithdrawalRequest(rewardJar, data.linkedBankAccount, rewardJar.availableAmount);
   const canSubmitWithdrawal = withdrawalErrors.length === 0;
   const complianceSummary = data.complianceSummary;
-  const complianceAuditLogs = complianceSummary.latestAuditLogs.slice(0, 3);
   const todayAvailableGrowthAmount = formatInteger(locale, taskBoard.todayAvailableVirtualGrowthAmount);
   const todayAvailableRewardAmount = formatCurrency(locale, taskBoard.todayAvailableRewardJarAmount);
   const localizedAllocationExamples = allocationDraft.examples.map((example) => translateAllocationExample(locale, example));
@@ -239,6 +240,30 @@ function MobileApp() {
       await refresh();
     } finally {
       setIntroductionLoading(false);
+    }
+  };
+
+  const handleDisclosureSelection = (disclosureId: string) => {
+    setSelectedDisclosureIds((current) => current.includes(disclosureId)
+      ? current.filter((id) => id !== disclosureId)
+      : [...current, disclosureId]);
+    setDisclosureAction({ loading: false, error: null, message: null });
+  };
+
+  const handleConfirmDisclosures = async () => {
+    const pendingIds = complianceSummary.pendingDisclosures.map((disclosure) => disclosure.id);
+    if (pendingIds.some((id) => !selectedDisclosureIds.includes(id))) {
+      setDisclosureAction({ loading: false, error: t(locale, "compliance.selectAll"), message: null });
+      return;
+    }
+    setDisclosureAction({ loading: true, error: null, message: null });
+    try {
+      await Promise.all(pendingIds.map((id) => acceptDisclosure(id)));
+      await refresh();
+      setSelectedDisclosureIds([]);
+      setDisclosureAction({ loading: false, error: null, message: t(locale, "compliance.success") });
+    } catch (error) {
+      setDisclosureAction({ loading: false, error: error instanceof Error ? error.message : t(locale, "compliance.error"), message: null });
     }
   };
 
@@ -479,41 +504,50 @@ function MobileApp() {
               const accepted = complianceSummary.acceptedDisclosures.some(
                 (acceptance) => acceptance.disclosureId === disclosure.id && acceptance.version === disclosure.version
               );
+              const selected = accepted || selectedDisclosureIds.includes(disclosure.id);
 
               return (
-                <View key={disclosure.id} style={styles.disclosureRow}>
-                  <View style={[styles.disclosureMarker, accepted ? styles.disclosureMarkerAccepted : styles.disclosureMarkerPending]}>
-                    <AppIcon color={accepted ? "success" : "reward"} name={accepted ? "check" : "alert-outline"} size="xs" />
+                <Pressable
+                  accessibilityLabel={`${translateText(locale, disclosure.title) ?? disclosure.title}，${accepted ? t(locale, "badge.confirmed") : t(locale, "badge.notConfirmed")}`}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected, disabled: accepted }}
+                  disabled={accepted}
+                  key={disclosure.id}
+                  onPress={() => handleDisclosureSelection(disclosure.id)}
+                  style={({ pressed }) => [styles.disclosureRow, pressed ? styles.disclosureRowPressed : undefined]}
+                >
+                  <View style={[styles.disclosureMarker, selected ? styles.disclosureMarkerAccepted : styles.disclosureMarkerPending]}>
+                    <AppIcon color={selected ? "success" : "reward"} name={selected ? "check" : "alert-outline"} size="xs" />
                   </View>
                   <View style={styles.sectionCopy}>
                     <AppText variant="bodyStrong">{translateText(locale, disclosure.title)}</AppText>
                     <AppText color="textSecondary" variant="caption">
                       {getDisclosureTypeLabel(locale, disclosure.type)} · {disclosure.version}
                     </AppText>
+                    <AppText color="textSecondary" variant="caption">
+                      {t(locale, "compliance.appliesTo", {
+                        contexts: disclosure.requiredFor
+                          .filter((context) => context !== "real_product")
+                          .map((context) => t(locale, `compliance.context.${context}`))
+                          .join(locale === "en-US" ? ", " : "、")
+                      })}
+                    </AppText>
                     <AppText color="textSecondary" variant="caption">{translateText(locale, disclosure.body)}</AppText>
                   </View>
                   <Badge iconName={accepted ? "check-circle-outline" : "clock-outline"} label={accepted ? t(locale, "badge.confirmed") : t(locale, "badge.notConfirmed")} tone={accepted ? "success" : "reward"} />
-                </View>
+                </Pressable>
               );
             })}
           </View>
 
-          <View style={styles.auditList}>
-            {complianceAuditLogs.map((log) => (
-              <View key={log.id} style={styles.auditRow}>
-                <View style={styles.sectionCopy}>
-                  <AppText variant="bodyStrong">{translateText(locale, log.summary)}</AppText>
-                  <AppText color="textSecondary" variant="caption">
-                    {log.action} · {log.actorType} · {log.occurredAt.slice(0, 10)}
-                  </AppText>
-                </View>
-              </View>
-            ))}
-          </View>
+          {disclosureAction.error ? <AppText color="danger" variant="caption">{disclosureAction.error}</AppText> : null}
+          {disclosureAction.message ? <AppText color="success" variant="caption">{disclosureAction.message}</AppText> : null}
 
           <Button
-            disabled={complianceSummary.pendingDisclosureCount === 0}
+            disabled={isFallback || complianceSummary.pendingDisclosureCount === 0}
             label={complianceSummary.pendingDisclosureCount === 0 ? t(locale, "action.disclosuresConfirmed") : t(locale, "action.confirmDisclosures")}
+            loading={disclosureAction.loading}
+            onPress={() => void handleConfirmDisclosures()}
             variant={complianceSummary.pendingDisclosureCount === 0 ? "secondary" : "primary"}
           />
         </Card>
@@ -1289,6 +1323,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.md,
     padding: spacing.md
+  },
+  disclosureRowPressed: {
+    opacity: 0.82
   },
   disclosureMarker: {
     alignItems: "center",
