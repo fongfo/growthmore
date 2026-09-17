@@ -301,6 +301,7 @@ function MobileApp() {
       });
       setSimulationRun(result.run);
       setReflectionComplete(result.reflection.completed);
+      await refresh();
     } catch (error) {
       setReflectionState({ loading: false, error: error instanceof Error ? error.message : t(locale, "run.reflectionError") });
       return;

@@ -6,6 +6,7 @@ import {
   applyTaskAction,
   applyWithdrawalReviewAction,
   createDisclosureAcceptance,
+  createRewardJarSnapshot,
   createSimulationCycleRun,
   demoDisclosureVersions,
   createSimulationAllocationDraft,
@@ -22,6 +23,7 @@ import {
   type MockUserSession,
   type TaskAction,
   type UserTask,
+  type RewardLedgerEntry,
   type VirtualBalanceLedgerEntry,
   type VirtualBalanceSnapshot
 } from "@growthmore/shared";
@@ -431,24 +433,105 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    if (run.reviewStatus === "completed" && run.reflectionResult) {
-      response.json({ reflection: run.reflectionResult, run, idempotent: true });
-      return;
-    }
-    const completedRun = {
-      ...run,
-      reviewStatus: "completed" as const,
-      reviewCompletedAt: new Date().toISOString(),
-      rewardEligible: true,
-      rewardActivityAmount: run.startingVirtualAmount > 0 ? 1.8 : 0,
-      reflectionResult: result
-    };
-    store.updateState(currentSession(response).user.id, (state) => ({
-      ...state,
-      simulationRun: state.simulationRun.id === completedRun.id ? completedRun : state.simulationRun,
-      simulationRuns: state.simulationRuns.map((item) => item.id === completedRun.id ? completedRun : item)
-    }));
-    response.status(201).json({ reflection: result, run: completedRun, idempotent: false });
+    let completedRun = run;
+    let rewardLedgerEntry: RewardLedgerEntry | null = null;
+    let idempotent = false;
+    let lockReason: string | null = null;
+    let newRewardReserved = false;
+    store.updateState(currentSession(response).user.id, (state) => {
+      const currentRun = state.simulationRuns.find((item) => item.id === run.id)!;
+      const existingReward = state.rewardLedger.find((entry) => entry.sourceType === "learning_cycle" && entry.sourceId === run.id);
+      if (currentRun.reviewStatus === "completed" && currentRun.reflectionResult) {
+        completedRun = currentRun;
+        rewardLedgerEntry = existingReward ?? null;
+        idempotent = true;
+        return state;
+      }
+
+      const now = new Date().toISOString();
+      const rewardAmount = 1.8;
+      const todayPrefix = now.slice(0, 10);
+      const monthPrefix = now.slice(0, 7);
+      const userDailyAmount = state.rewardLedger
+        .filter((entry) => entry.programId === state.rewardBudget.programId && entry.createdAt.startsWith(todayPrefix))
+        .reduce((total, entry) => total + entry.amount, 0);
+      const userMonthlyAmount = state.rewardLedger
+        .filter((entry) => entry.programId === state.rewardBudget.programId && entry.createdAt.startsWith(monthPrefix))
+        .reduce((total, entry) => total + entry.amount, 0);
+      const accountEligible = currentSession(response).user.kycStatus === "mock_verified";
+      const budgetAvailable =
+        state.rewardBudget.reservedAmount + rewardAmount <= state.rewardBudget.totalBudgetAmount &&
+        state.rewardBudget.reservedTodayAmount + rewardAmount <= state.rewardBudget.dailyBudgetAmount;
+      const withinUserLimits =
+        userDailyAmount + rewardAmount <= state.rewardBudget.userDailyLimitAmount &&
+        userMonthlyAmount + rewardAmount <= state.rewardBudget.userMonthlyLimitAmount;
+      const canAward = Boolean(existingReward) || (currentRun.startingVirtualAmount > 0 && accountEligible && budgetAvailable && withinUserLimits);
+
+      if (!accountEligible) lockReason = "账户尚未满足活动资格。";
+      else if (!budgetAvailable) lockReason = "活动预算不足，本周期不产生奖励。";
+      else if (!withinUserLimits) lockReason = "已达到用户日或月奖励上限。";
+      else if (currentRun.startingVirtualAmount <= 0) lockReason = "本周期没有有效学习配置。";
+
+      if (existingReward) {
+        rewardLedgerEntry = existingReward;
+      } else if (canAward) {
+        rewardLedgerEntry = {
+          id: store.createId("rwd"),
+          userId: currentSession(response).user.id,
+          status: "pending",
+          amount: rewardAmount,
+          currency: "CNY",
+          sourceType: "learning_cycle",
+          sourceId: currentRun.id,
+          programId: state.rewardBudget.programId,
+          budgetBatchId: state.rewardBudget.budgetBatchId,
+          activityRuleVersion: state.rewardBudget.activityRuleVersion,
+          description: "完成学习周期和复盘，活动预算已预留。",
+          lockReason: "预算已预留，等待活动结算校验。",
+          availableAt: null,
+          createdAt: now
+        };
+        newRewardReserved = true;
+      }
+      completedRun = {
+        ...currentRun,
+        reviewStatus: "completed",
+        reviewCompletedAt: now,
+        rewardEligible: canAward,
+        rewardActivityAmount: canAward ? existingReward?.amount ?? rewardAmount : 0,
+        reflectionResult: result
+      };
+      const rewardLedger = newRewardReserved && rewardLedgerEntry ? [...state.rewardLedger, rewardLedgerEntry] : state.rewardLedger;
+      const rewardJar = createRewardJarSnapshot(rewardLedger);
+      return {
+        ...state,
+        simulationRun: state.simulationRun.id === completedRun.id ? completedRun : state.simulationRun,
+        simulationRuns: state.simulationRuns.map((item) => item.id === completedRun.id ? completedRun : item),
+        rewardLedger,
+        rewardJar: { ...rewardJar, userId: currentSession(response).user.id },
+        rewardBudget: newRewardReserved ? {
+          ...state.rewardBudget,
+          reservedAmount: state.rewardBudget.reservedAmount + rewardAmount,
+          reservedTodayAmount: state.rewardBudget.reservedTodayAmount + rewardAmount
+        } : state.rewardBudget,
+        home: {
+          ...state.home,
+          balances: { ...state.home.balances, rewardJarAmount: rewardJar.totalBalanceAmount }
+        }
+      };
+    });
+    response.status(idempotent ? 200 : 201).json({
+      reflection: completedRun.reflectionResult,
+      run: completedRun,
+      rewardLedgerEntry,
+      rewardDecision: {
+        eligible: completedRun.rewardEligible,
+        amount: completedRun.rewardActivityAmount,
+        lockReason,
+        ruleVersion: currentState(store, response).rewardBudget.activityRuleVersion
+      },
+      idempotent
+    });
   });
   app.get("/api/rewards/jar", (_request, response) => {
     response.json({

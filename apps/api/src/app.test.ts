@@ -5,6 +5,7 @@ import { join } from "node:path";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp } from "./app";
+import type { DemoUserState } from "./demoStore";
 
 
 describe("production server startup", () => {
@@ -483,6 +484,80 @@ describe("simulation learning cycle and reflection", () => {
   });
 });
 describe("reward jar and ledger", () => {
+  const validReflection = {
+    answers: [
+      { questionId: "highest-volatility", answer: "黄金波动最大" },
+      { questionId: "allocation-lesson", answer: "分散配置可以降低集中风险" },
+      { questionId: "reward-boundary", answer: "活动奖励来自银行预算和规则" }
+    ],
+    riskConfirmationAccepted: true
+  };
+
+  it("reserves budget and posts one traceable reward when a review passes", async () => {
+    const app = createApp();
+    const created = await request(app).post("/api/simulation/run").send({});
+    const runId = created.body.run.id as string;
+    const before = app.locals.demoStore.getState("mock-user-001");
+    const response = await request(app).post(`/api/simulation/runs/${runId}/reflection`).send(validReflection);
+    const after = app.locals.demoStore.getState("mock-user-001");
+
+    expect(response.status).toBe(201);
+    expect(response.body.rewardDecision).toMatchObject({ eligible: true, amount: 1.8, ruleVersion: "reward-learning-v1" });
+    expect(response.body.rewardLedgerEntry).toMatchObject({
+      sourceType: "learning_cycle",
+      sourceId: runId,
+      amount: 1.8,
+      status: "pending",
+      budgetBatchId: "budget-2026-09-learning-cycle"
+    });
+    expect(after.rewardBudget.reservedAmount).toBe(before.rewardBudget.reservedAmount + 1.8);
+    expect(after.rewardJar.pendingAmount).toBe(before.rewardJar.pendingAmount + 1.8);
+  });
+
+  it("awards a cycle exactly once under concurrent and repeated submissions", async () => {
+    const app = createApp();
+    const created = await request(app).post("/api/simulation/run").send({});
+    const runId = created.body.run.id as string;
+    await Promise.all([
+      request(app).post(`/api/simulation/runs/${runId}/reflection`).send(validReflection),
+      request(app).post(`/api/simulation/runs/${runId}/reflection`).send(validReflection)
+    ]);
+    await request(app).post(`/api/simulation/runs/${runId}/reflection`).send(validReflection);
+    const state = app.locals.demoStore.getState("mock-user-001");
+    expect(state.rewardLedger.filter((entry: { sourceId: string }) => entry.sourceId === runId)).toHaveLength(1);
+  });
+
+  it("does not award failed reviews or overspend an exhausted budget", async () => {
+    const app = createApp();
+    const failedRun = await request(app).post("/api/simulation/run").send({});
+    await request(app).post(`/api/simulation/runs/${failedRun.body.run.id}/reflection`).send({
+      answers: [],
+      riskConfirmationAccepted: false
+    }).expect(400);
+    expect(app.locals.demoStore.getState("mock-user-001").rewardLedger.some((entry: { sourceId: string }) => entry.sourceId === failedRun.body.run.id)).toBe(false);
+
+    app.locals.demoStore.updateState("mock-user-001", (state: DemoUserState) => ({
+      ...state,
+      rewardBudget: { ...state.rewardBudget, reservedAmount: state.rewardBudget.totalBudgetAmount }
+    }));
+    const blockedRun = await request(app).post("/api/simulation/run").send({});
+    const blocked = await request(app).post(`/api/simulation/runs/${blockedRun.body.run.id}/reflection`).send(validReflection);
+    expect(blocked.body.rewardDecision).toMatchObject({ eligible: false, amount: 0 });
+    expect(blocked.body.rewardDecision.lockReason).toContain("预算不足");
+    expect(app.locals.demoStore.getState("mock-user-001").rewardLedger.some((entry: { sourceId: string }) => entry.sourceId === blockedRun.body.run.id)).toBe(false);
+  });
+
+  it("uses the same server reward amount for different simulated outcomes", async () => {
+    const app = createApp();
+    const low = await request(app).post("/api/simulation/run").send({ allocations: [{ productId: "term-deposit", amount: 500 }] });
+    const volatile = await request(app).post("/api/simulation/run").send({ allocations: [{ productId: "gold", amount: 500 }] });
+    const lowReward = await request(app).post(`/api/simulation/runs/${low.body.run.id}/reflection`).send({ ...validReflection, riskConfirmationAccepted: false });
+    const volatileReward = await request(app).post(`/api/simulation/runs/${volatile.body.run.id}/reflection`).send(validReflection);
+    expect(lowReward.body.rewardDecision.amount).toBe(1.8);
+    expect(volatileReward.body.rewardDecision.amount).toBe(1.8);
+    expect(low.body.run.simulatedChangePercent).not.toBe(volatile.body.run.simulatedChangePercent);
+  });
+
   it("returns the reward jar summary", async () => {
     const response = await request(createApp()).get("/api/rewards/jar");
 
