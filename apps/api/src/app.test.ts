@@ -276,10 +276,12 @@ describe("app home", () => {
   it("stores introduction preference separately from learning progress", async () => {
     const app = createApp();
     const before = app.locals.demoStore.getState("mock-user-001").learningProgress;
+    const acceptanceCount = app.locals.demoStore.getState("mock-user-001").disclosureAcceptances.length;
     const dismissed = await request(app).post("/api/app/home/introduction").send({ dismissed: true });
     expect(dismissed.status).toBe(200);
     expect(dismissed.body.home.introduction.dismissed).toBe(true);
     expect(app.locals.demoStore.getState("mock-user-001").learningProgress).toEqual(before);
+    expect(app.locals.demoStore.getState("mock-user-001").disclosureAcceptances).toHaveLength(acceptanceCount);
     const reviewed = await request(app).post("/api/app/home/introduction").send({ dismissed: false });
     expect(reviewed.body.home.introduction.dismissed).toBe(false);
   });
@@ -681,7 +683,7 @@ describe("disclosures and audit logs", () => {
   });
 
   it("accepts a disclosure version and returns an audit log", async () => {
-    const response = await request(createApp()).post("/api/disclosures/disclosure-withdrawal-v1/accept").set({
+    const response = await request(createApp()).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).set({
       "User-Agent": "GrowthmoreMobile/0.1 test"
     });
 
@@ -689,12 +691,46 @@ describe("disclosures and audit logs", () => {
     expect(response.body.acceptance).toMatchObject({
       disclosureId: "disclosure-withdrawal-v1",
       disclosureType: "withdrawal",
-      channel: "api"
+      channel: "mobile"
     });
     expect(response.body.auditLog).toMatchObject({
       action: "disclosure.accepted",
       entityType: "disclosure"
     });
+    expect(response.body.idempotent).toBe(false);
+  });
+
+  it("accepts each disclosure version only once", async () => {
+    const app = createApp();
+    const responses = await Promise.all([
+      request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }),
+      request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" })
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 201]);
+    expect(responses.filter((response) => response.body.idempotent)).toHaveLength(1);
+    expect(app.locals.demoStore.getState("mock-user-001").disclosureAcceptances.filter(
+      (acceptance: { disclosureId: string }) => acceptance.disclosureId === "disclosure-withdrawal-v1"
+    )).toHaveLength(1);
+  });
+
+  it("keeps accepted disclosure versions after an API restart", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "growthmore-disclosure-"));
+    const databasePath = join(directory, "demo.sqlite");
+    try {
+      const firstApp = createApp({ databasePath });
+      await request(firstApp).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+      firstApp.locals.demoStore.close();
+
+      const restartedApp = createApp({ databasePath });
+      const response = await request(restartedApp).get("/api/disclosure-acceptances/current");
+      expect(response.body.compliance.pendingDisclosureCount).toBe(0);
+      expect(response.body.acceptances).toEqual(expect.arrayContaining([
+        expect.objectContaining({ disclosureId: "disclosure-withdrawal-v1", version: "withdrawal-2026-09-v1" })
+      ]));
+      restartedApp.locals.demoStore.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("returns current disclosure acceptance summary", async () => {
@@ -703,10 +739,26 @@ describe("disclosures and audit logs", () => {
     expect(response.status).toBe(200);
     expect(response.body.acceptances).toHaveLength(3);
     expect(response.body.compliance).toMatchObject({
-      requiredDisclosureCount: 2,
-      acceptedDisclosureCount: 1,
+      requiredDisclosureCount: 4,
+      acceptedDisclosureCount: 3,
       pendingDisclosureCount: 1
     });
+  });
+
+  it("blocks a write until the current disclosure version is accepted", async () => {
+    const app = createApp();
+    app.locals.demoStore.updateState("mock-user-001", (state: DemoUserState) => ({
+      ...state,
+      disclosureAcceptances: state.disclosureAcceptances.map((acceptance) =>
+        acceptance.disclosureType === "simulation" ? { ...acceptance, version: "simulation-old-version" } : acceptance
+      )
+    }));
+    const blocked = await request(app).put("/api/simulation/allocations").send({ allocations: [{ productId: "bond", amount: 100 }] });
+    expect(blocked.status).toBe(428);
+    expect(blocked.body).toMatchObject({ error: "disclosure_required", requiredFor: ["simulation"] });
+    expect(blocked.body.pendingDisclosures.map((item: { type: string }) => item.type)).toContain("simulation");
+    await request(app).post("/api/disclosures/disclosure-simulation-v1/accept").send({ channel: "mobile" }).expect(201);
+    await request(app).put("/api/simulation/allocations").send({ allocations: [{ productId: "bond", amount: 100 }] }).expect(200);
   });
 
   it("returns admin audit logs", async () => {
@@ -719,8 +771,16 @@ describe("disclosures and audit logs", () => {
   });
 });
 describe("withdrawals", () => {
-  it("submits a withdrawal request for manual review", async () => {
+  it("blocks withdrawal until the current withdrawal disclosure is accepted", async () => {
     const response = await request(createApp()).post("/api/rewards/withdraw").send({ amount: 5 });
+    expect(response.status).toBe(428);
+    expect(response.body.pendingDisclosures.map((item: { type: string }) => item.type)).toEqual(["withdrawal"]);
+  });
+
+  it("submits a withdrawal request for manual review", async () => {
+    const app = createApp();
+    await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+    const response = await request(app).post("/api/rewards/withdraw").send({ amount: 5 });
 
     expect(response.status).toBe(201);
     expect(response.body.withdrawal).toMatchObject({
@@ -733,7 +793,9 @@ describe("withdrawals", () => {
   });
 
   it("rejects invalid withdrawal requests", async () => {
-    const response = await request(createApp()).post("/api/rewards/withdraw").send({ amount: 999 });
+    const app = createApp();
+    await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
+    const response = await request(app).post("/api/rewards/withdraw").send({ amount: 999 });
 
     expect(response.status).toBe(400);
     expect(response.body.error).toBe("invalid_withdrawal_request");

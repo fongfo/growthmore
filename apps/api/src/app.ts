@@ -24,6 +24,9 @@ import {
   type TaskAction,
   type UserTask,
   type RewardLedgerEntry,
+  type ComplianceSummary,
+  type DisclosureRequiredFor,
+  type DisclosureVersion,
   type TodayHomeSummary,
   type VirtualBalanceLedgerEntry,
   type VirtualBalanceSnapshot
@@ -42,6 +45,49 @@ function currentSession(response: Response): MockUserSession {
 
 function currentState(store: DemoStore, response: Response): DemoUserState {
   return store.getState(currentSession(response).user.id);
+}
+
+function getPendingDisclosures(state: DemoUserState, contexts: DisclosureRequiredFor[]): DisclosureVersion[] {
+  const acceptedVersions = new Set(state.disclosureAcceptances.map(
+    (acceptance) => `${acceptance.disclosureId}:${acceptance.version}`
+  ));
+  const required = contexts.flatMap((context) => getRequiredDisclosureVersions(context));
+  return [...new Map(required.map((disclosure) => [disclosure.id, disclosure])).values()].filter(
+    (disclosure) => !acceptedVersions.has(`${disclosure.id}:${disclosure.version}`)
+  );
+}
+
+function createComplianceSummaryForState(state: DemoUserState): ComplianceSummary {
+  const requiredDisclosures = demoDisclosureVersions.filter(
+    (disclosure) => disclosure.status === "active" && disclosure.requiredFor.some((context) => context !== "real_product")
+  );
+  const acceptedDisclosures = state.disclosureAcceptances.filter((acceptance) =>
+    requiredDisclosures.some((disclosure) => disclosure.id === acceptance.disclosureId && disclosure.version === acceptance.version)
+  );
+  const pendingDisclosures = requiredDisclosures.filter((disclosure) =>
+    !acceptedDisclosures.some((acceptance) => acceptance.disclosureId === disclosure.id && acceptance.version === disclosure.version)
+  );
+  return {
+    requiredDisclosureCount: requiredDisclosures.length,
+    acceptedDisclosureCount: acceptedDisclosures.length,
+    pendingDisclosureCount: pendingDisclosures.length,
+    requiredDisclosures,
+    acceptedDisclosures,
+    pendingDisclosures,
+    latestAuditLogs: [...state.auditLogs].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt)).slice(0, 5)
+  };
+}
+
+function requireDisclosures(store: DemoStore, response: Response, contexts: DisclosureRequiredFor[]): boolean {
+  const pendingDisclosures = getPendingDisclosures(currentState(store, response), contexts);
+  if (pendingDisclosures.length === 0) return true;
+  response.status(428).json({
+    error: "disclosure_required",
+    message: "请先确认当前操作所需的最新披露版本。",
+    requiredFor: contexts,
+    pendingDisclosures
+  });
+  return false;
 }
 
 function createTodayHome(state: DemoUserState): TodayHomeSummary {
@@ -306,7 +352,7 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.post("/api/disclosures/:disclosureId/accept", (request, response) => {
     const result = createDisclosureAcceptance(request.params.disclosureId, {
-      channel: "api",
+      channel: request.body?.channel === "mobile" ? "mobile" : "api",
       userAgent: request.get("user-agent") ?? "GrowthmoreAPI/0.1 demo",
       ipAddressMasked: "192.0.2.*"
     });
@@ -316,28 +362,42 @@ export function createApp(options: CreateAppOptions = {}) {
       return;
     }
 
-    const acceptance = {
-      ...result.acceptance!,
-      id: store.createId("acceptance"),
-      userId: currentSession(response).user.id
-    };
-    const auditLog = {
-      ...result.auditLog!,
-      id: store.createId("audit"),
-      actorId: currentSession(response).user.id
-    };
-    store.updateState(currentSession(response).user.id, (state) => ({
-      ...state,
-      disclosureAcceptances: [...state.disclosureAcceptances, acceptance],
-      auditLogs: [...state.auditLogs, auditLog]
-    }));
-    response.status(201).json({ acceptance, auditLog });
+    let acceptance = result.acceptance!;
+    let auditLog = result.auditLog!;
+    let idempotent = false;
+    store.updateState(currentSession(response).user.id, (state) => {
+      const existingAcceptance = state.disclosureAcceptances.find(
+        (item) => item.disclosureId === result.acceptance!.disclosureId && item.version === result.acceptance!.version
+      );
+      if (existingAcceptance) {
+        acceptance = existingAcceptance;
+        idempotent = true;
+        return state;
+      }
+      acceptance = {
+        ...result.acceptance!,
+        id: store.createId("acceptance"),
+        userId: currentSession(response).user.id
+      };
+      auditLog = {
+        ...result.auditLog!,
+        id: store.createId("audit"),
+        actorId: currentSession(response).user.id
+      };
+      return {
+        ...state,
+        disclosureAcceptances: [...state.disclosureAcceptances, acceptance],
+        auditLogs: [...state.auditLogs, auditLog]
+      };
+    });
+    response.status(idempotent ? 200 : 201).json({ acceptance, auditLog: idempotent ? null : auditLog, idempotent });
   });
 
   app.get("/api/disclosure-acceptances/current", (_request, response) => {
+    const state = currentState(store, response);
     response.json({
-      acceptances: currentState(store, response).disclosureAcceptances,
-      compliance: currentState(store, response).complianceSummary
+      acceptances: state.disclosureAcceptances,
+      compliance: createComplianceSummaryForState(state)
     });
   });
 
@@ -393,6 +453,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.put("/api/simulation/allocations", (request, response) => {
+    if (!requireDisclosures(store, response, ["simulation"])) return;
     const allocations = Array.isArray(request.body?.allocations)
       ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
       : [];
@@ -475,6 +536,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post("/api/simulation/run", (request, response) => {
+    if (!requireDisclosures(store, response, ["simulation"])) return;
     const allocations = Array.isArray(request.body?.allocations)
       ? (request.body.allocations as Array<Pick<SimulationAllocation, "productId" | "amount">>)
       : currentState(store, response).allocationDraft.allocations;
@@ -503,6 +565,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post("/api/simulation/runs/:runId/reflection", (request, response) => {
+    if (!requireDisclosures(store, response, ["simulation", "reward"])) return;
     const storedState = currentState(store, response);
     const run = storedState.simulationRuns.find((item) => item.id === request.params.runId) ?? null;
 
@@ -638,6 +701,7 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   });
   app.post("/api/rewards/withdraw", (request, response) => {
+    if (!requireDisclosures(store, response, ["withdrawal"])) return;
     const amount = Number(request.body?.amount);
     const state = currentState(store, response);
     const result = createWithdrawalRequest(state.rewardJar, state.account, amount);
@@ -719,10 +783,12 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post("/api/tasks/:taskId/start", (request, response) => {
+    if (!requireDisclosures(store, response, ["task"])) return;
     respondWithTaskAction(store, response, request.params.taskId, "start");
   });
 
   app.post("/api/tasks/:taskId/submit", (request, response) => {
+    if (!requireDisclosures(store, response, ["task"])) return;
     const taskId = request.params.taskId;
     if (taskId === demoIntroLesson.taskId) {
       response.status(409).json({ error: "learning_required", message: "请阅读全部课程内容并通过知识测验后完成任务。" });
@@ -762,10 +828,12 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post("/api/tasks/:taskId/retry", (request, response) => {
+    if (!requireDisclosures(store, response, ["task"])) return;
     respondWithTaskAction(store, response, request.params.taskId, "retry");
   });
 
   app.post("/api/tasks/:taskId/claim", (request, response) => {
+    if (!requireDisclosures(store, response, ["task"])) return;
     try {
       const result = claimTaskReward(store, currentSession(response).user.id, request.params.taskId);
       response.json({ action: "claim", ...result });
@@ -789,6 +857,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post("/api/learning/lessons/:lessonId/read", (request, response) => {
+    if (!requireDisclosures(store, response, ["task"])) return;
     if (request.params.lessonId !== demoIntroLesson.id) {
       response.status(404).json({ error: "lesson_not_found" });
       return;
@@ -808,6 +877,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   app.post("/api/learning/quizzes/:quizId/submit", (request, response) => {
+    if (!requireDisclosures(store, response, ["task"])) return;
     if (request.params.quizId !== demoIntroLesson.quiz.id) {
       response.status(404).json({ error: "quiz_not_found" });
       return;

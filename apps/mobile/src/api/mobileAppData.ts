@@ -16,6 +16,7 @@ import {
   demoWithdrawalRequests,
   type BankTenant,
   type ComplianceSummary,
+  type DisclosureAcceptance,
   type LinkedBankAccount,
   type LearningLesson,
   type LearningProgress,
@@ -91,6 +92,15 @@ export type TaskActionResponse = {
 
 export type LearningLessonResponse = { lesson: LearningLesson; progress: LearningProgress };
 export type LearningQuizResponse = { passed: boolean; feedback: string; progress: LearningProgress; task: UserTask };
+
+export function acceptDisclosure(disclosureId: string, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
+  return postJson<{ acceptance: DisclosureAcceptance; idempotent: boolean }>(
+    apiBaseUrl,
+    "/api/disclosures/" + encodeURIComponent(disclosureId) + "/accept",
+    { channel: "mobile" },
+    fetcher
+  );
+}
 
 async function postJson<T>(baseUrl: string, path: string, body: unknown, fetcher: Fetcher): Promise<T> {
   const response = await fetcher(baseUrl.replace(/\/$/, "") + path, {
