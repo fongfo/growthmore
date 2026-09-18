@@ -341,6 +341,24 @@ export type RewardCampaignBudget = {
   userMonthlyLimitAmount: number;
 };
 
+export type CampaignTaskRule = {
+  taskId: string;
+  requiredStatus: "completed" | "claimed";
+  rewardAmount: number;
+};
+
+export type CampaignConfiguration = {
+  id: string;
+  name: string;
+  status: "draft" | "published";
+  startsAt: string;
+  endsAt: string;
+  ruleVersion: string;
+  publishedAt: string | null;
+  tasks: CampaignTaskRule[];
+  budget: RewardCampaignBudget;
+};
+
 export type RewardJarSnapshot = {
   userId: MockUserSession["user"]["id"];
   currency: "CNY";
@@ -450,9 +468,11 @@ export type AuditAction =
   | "task.status_changed"
   | "reward.ledger_created"
   | "withdrawal.submitted"
-  | "withdrawal.reviewed";
+  | "withdrawal.reviewed"
+  | "campaign.configured"
+  | "campaign.published";
 
-export type AuditEntityType = "disclosure" | "task" | "reward_ledger" | "withdrawal_request";
+export type AuditEntityType = "disclosure" | "task" | "reward_ledger" | "withdrawal_request" | "campaign";
 
 export type AuditLogEntry = {
   id: string;
@@ -1366,6 +1386,18 @@ export const demoRewardCampaignBudget: RewardCampaignBudget = {
   reservedTodayAmount: 18,
   userDailyLimitAmount: 5,
   userMonthlyLimitAmount: 20
+};
+
+export const demoCampaignConfiguration: CampaignConfiguration = {
+  id: "campaign-2026-09-learning",
+  name: "九月成长学习活动",
+  status: "published",
+  startsAt: "2026-09-01T00:00:00+08:00",
+  endsAt: "2026-09-30T23:59:59+08:00",
+  ruleVersion: demoRewardCampaignBudget.activityRuleVersion,
+  publishedAt: "2026-09-01T08:00:00+08:00",
+  tasks: [{ taskId: "profile-kyc-mock", requiredStatus: "completed", rewardAmount: 1.8 }],
+  budget: demoRewardCampaignBudget
 };
 
 function createEmptyRewardStatusCounts(): Record<RewardStatus, number> {

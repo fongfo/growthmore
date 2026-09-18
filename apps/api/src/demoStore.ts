@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   demoAuditLogs,
+  demoCampaignConfiguration,
   demoComplianceSummary,
   demoDisclosureAcceptances,
   demoLinkedBankAccount,
@@ -20,6 +21,7 @@ import {
   demoVirtualBalanceLedger,
   demoWithdrawalRequests,
   type AuditLogEntry,
+  type CampaignConfiguration,
   type ComplianceSummary,
   type DisclosureAcceptance,
   type LinkedBankAccount,
@@ -48,6 +50,8 @@ export type DemoUserState = {
   rewardJar: RewardJarSnapshot;
   rewardLedger: RewardLedgerEntry[];
   rewardBudget: RewardCampaignBudget;
+  campaign: CampaignConfiguration;
+  campaignVersions: CampaignConfiguration[];
   withdrawals: WithdrawalRequest[];
   disclosureAcceptances: DisclosureAcceptance[];
   complianceSummary: ComplianceSummary;
@@ -134,6 +138,8 @@ function seedUser(phone: string): StoredUser {
     },
     rewardLedger: demoRewardLedger.map(withUserId),
     rewardBudget: clone(demoRewardCampaignBudget),
+    campaign: clone(demoCampaignConfiguration),
+    campaignVersions: [clone(demoCampaignConfiguration)],
     withdrawals: demoWithdrawalRequests.map((item) => ({
       ...withUserId(item),
       withdrawalAccount: {
@@ -260,6 +266,8 @@ export class DemoStore {
     state.simulationRuns = Array.isArray(state.simulationRuns) ? state.simulationRuns.map(normalizeRun) : [state.simulationRun];
     if (typeof state.homeIntroductionDismissed !== "boolean") state.homeIntroductionDismissed = false;
     if (!state.rewardBudget) state.rewardBudget = clone(demoRewardCampaignBudget);
+    if (!state.campaign) state.campaign = clone(demoCampaignConfiguration);
+    if (!Array.isArray(state.campaignVersions)) state.campaignVersions = [clone(state.campaign)];
     state.withdrawals = state.withdrawals.map((withdrawal) => ({
       ...withdrawal,
       idempotencyKey: withdrawal.idempotencyKey ?? null,
