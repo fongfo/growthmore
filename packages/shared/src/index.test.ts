@@ -323,18 +323,24 @@ describe("simulation learning cycle and reflection", () => {
     expect(result.request?.disclosure).toContain("不接真实打款");
   });
 
-  it("supports approve, reject, and retry transitions for withdrawal review", () => {
+  it("supports review, simulated settlement, failure release, and retry transitions", () => {
     const reviewRequest = demoWithdrawalRequests.find((request) => request.status === "under_review");
     const failedRequest = demoWithdrawalRequests.find((request) => request.status === "failed");
     const approved = applyWithdrawalReviewAction(reviewRequest!, "approve");
     const rejected = applyWithdrawalReviewAction(reviewRequest!, "reject", { reason: "账户信息不一致" });
     const retried = applyWithdrawalReviewAction(failedRequest!, "retry");
+    const settled = applyWithdrawalReviewAction(approved.request!, "settle");
+    const recoverableFailure = applyWithdrawalReviewAction(reviewRequest!, "fail", { recoverable: true });
+    const finalFailure = applyWithdrawalReviewAction(reviewRequest!, "fail", { recoverable: false });
     const invalid = applyWithdrawalReviewAction(approved.request!, "retry");
 
     expect(approved.request?.status).toBe("approved");
     expect(rejected.request?.status).toBe("rejected");
     expect(rejected.request?.rejectionReason).toBe("账户信息不一致");
     expect(retried.request?.status).toBe("under_review");
+    expect(settled.request).toMatchObject({ status: "paid", fundsStatus: "paid" });
+    expect(recoverableFailure.request).toMatchObject({ status: "failed", fundsStatus: "frozen", failureRecoverable: true });
+    expect(finalFailure.request).toMatchObject({ status: "failed", fundsStatus: "released", failureRecoverable: false });
     expect(invalid.error).toContain("Invalid withdrawal transition");
   });
 });

@@ -1,4 +1,4 @@
-import { Component, useEffect, useState, type ReactNode } from "react";
+import { Component, useEffect, useRef, useState, type ReactNode } from "react";
 import { StatusBar } from "expo-status-bar";
 import { Pressable, SafeAreaView, StyleSheet, TextInput, View } from "react-native";
 import {
@@ -23,7 +23,7 @@ import {
   ProgressBar,
   Screen
 } from "./src/components";
-import { acceptDisclosure, fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./src/api/mobileAppData";
+import { acceptDisclosure, fallbackMobileAppData, loadLearningLesson, markLessonSectionRead, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, submitWithdrawal, updateHomeIntroduction } from "./src/api/mobileAppData";
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
@@ -190,6 +190,10 @@ function MobileApp() {
   const [introductionLoading, setIntroductionLoading] = useState(false);
   const [selectedDisclosureIds, setSelectedDisclosureIds] = useState<string[]>([]);
   const [disclosureAction, setDisclosureAction] = useState<{ loading: boolean; error: string | null; message: string | null }>({ loading: false, error: null, message: null });
+  const [withdrawalAmount, setWithdrawalAmount] = useState("5.00");
+  const [withdrawalConfirmed, setWithdrawalConfirmed] = useState(false);
+  const [withdrawalAction, setWithdrawalAction] = useState<{ loading: boolean; error: string | null; message: string | null }>({ loading: false, error: null, message: null });
+  const withdrawalRequestKey = useRef<string | null>(null);
 
   useEffect(() => {
     setAllocationDraft(data.allocationDraft);
@@ -218,8 +222,9 @@ function MobileApp() {
   const rewardJar = data.rewardJar;
   const recentRewardLedger = data.rewardLedger.slice(0, 4);
   const withdrawalRequests = data.withdrawals.slice(0, 3);
-  const withdrawalErrors = validateWithdrawalRequest(rewardJar, data.linkedBankAccount, rewardJar.availableAmount);
-  const canSubmitWithdrawal = withdrawalErrors.length === 0;
+  const parsedWithdrawalAmount = Number(withdrawalAmount);
+  const withdrawalErrors = validateWithdrawalRequest(rewardJar, data.linkedBankAccount, parsedWithdrawalAmount);
+  const canSubmitWithdrawal = withdrawalErrors.length === 0 && withdrawalConfirmed && !isFallback;
   const complianceSummary = data.complianceSummary;
   const todayAvailableGrowthAmount = formatInteger(locale, taskBoard.todayAvailableVirtualGrowthAmount);
   const todayAvailableRewardAmount = formatCurrency(locale, taskBoard.todayAvailableRewardJarAmount);
@@ -240,6 +245,30 @@ function MobileApp() {
       await refresh();
     } finally {
       setIntroductionLoading(false);
+    }
+  };
+
+  const handleWithdrawal = async () => {
+    if (!canSubmitWithdrawal) return;
+    const requestKey = withdrawalRequestKey.current ?? "mobile-" + data.session.user.id + "-" + Date.now();
+    withdrawalRequestKey.current = requestKey;
+    setWithdrawalAction({ loading: true, error: null, message: null });
+    try {
+      const result = await submitWithdrawal(parsedWithdrawalAmount, requestKey);
+      await refresh();
+      setWithdrawalConfirmed(false);
+      withdrawalRequestKey.current = null;
+      setWithdrawalAction({
+        loading: false,
+        error: null,
+        message: t(locale, "rewards.withdrawalSuccess", { id: result.withdrawal.id })
+      });
+    } catch (error) {
+      setWithdrawalAction({
+        loading: false,
+        error: error instanceof Error ? error.message : t(locale, "rewards.withdrawalError"),
+        message: null
+      });
     }
   };
 
@@ -1123,8 +1152,39 @@ function MobileApp() {
                 <AppText color="textSecondary" variant="label">{t(locale, "label.availableWithdrawal")}</AppText>
                 <AppText variant="title">{formatCurrency(locale, rewardJar.availableAmount)}</AppText>
               </View>
-              <Button disabled={!canSubmitWithdrawal} label={t(locale, "action.submitWithdrawal")} style={styles.withdrawalButton} />
+              <View style={styles.withdrawalAmountBox}>
+                <AppText color="textSecondary" variant="label">{t(locale, "rewards.amountLabel")}</AppText>
+                <TextInput
+                  accessibilityLabel={t(locale, "rewards.amountLabel")}
+                  keyboardType="decimal-pad"
+                  onChangeText={(value) => {
+                    setWithdrawalAmount(value);
+                    setWithdrawalAction({ loading: false, error: null, message: null });
+                    withdrawalRequestKey.current = null;
+                  }}
+                  style={styles.amountInput}
+                  value={withdrawalAmount}
+                />
+              </View>
             </View>
+            <Pressable
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: withdrawalConfirmed }}
+              onPress={() => setWithdrawalConfirmed((current) => !current)}
+              style={styles.riskCheckRow}
+            >
+              <AppIcon color={withdrawalConfirmed ? "success" : "textSecondary"} name={withdrawalConfirmed ? "checkbox-marked-outline" : "checkbox-blank-outline"} size="md" />
+              <AppText color="textSecondary" variant="caption">{t(locale, "rewards.confirmSimulation")}</AppText>
+            </Pressable>
+            <Button
+              disabled={!canSubmitWithdrawal}
+              label={t(locale, "action.submitWithdrawal")}
+              loading={withdrawalAction.loading}
+              onPress={() => void handleWithdrawal()}
+              style={styles.withdrawalButton}
+            />
+            {withdrawalAction.error ? <AppText color="danger" variant="caption">{withdrawalAction.error}</AppText> : null}
+            {withdrawalAction.message ? <AppText color="success" variant="caption">{withdrawalAction.message}</AppText> : null}
             {withdrawalErrors.length > 0 ? (
               <View style={styles.withdrawalReasonBox}>
                 {withdrawalErrors.map((error) => (
@@ -1140,7 +1200,7 @@ function MobileApp() {
                   <View style={styles.sectionCopy}>
                     <AppText variant="bodyStrong">{t(locale, "rewards.withdrawalTitle", { amount: formatCurrency(locale, withdrawal.amount) })}</AppText>
                     <AppText color="textSecondary" variant="caption">
-                      {translateText(locale, withdrawal.estimatedArrivalLabel)} · {withdrawal.withdrawalAccount.accountNumberMasked}
+                      {withdrawal.id} · {translateText(locale, withdrawal.estimatedArrivalLabel)} · {withdrawal.withdrawalAccount.accountNumberMasked}
                     </AppText>
                     {withdrawal.rejectionReason || withdrawal.failureReason ? (
                       <AppText color="danger" variant="caption">{translateText(locale, withdrawal.rejectionReason ?? withdrawal.failureReason)}</AppText>
@@ -1761,6 +1821,10 @@ const styles = StyleSheet.create({
   },
   withdrawalButton: {
     minWidth: 104
+  },
+  withdrawalAmountBox: {
+    alignItems: "flex-end",
+    gap: spacing.xs
   },
   withdrawalReasonBox: {
     backgroundColor: colors.light.surfaceMuted,

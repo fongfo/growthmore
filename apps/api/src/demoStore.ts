@@ -260,6 +260,16 @@ export class DemoStore {
     state.simulationRuns = Array.isArray(state.simulationRuns) ? state.simulationRuns.map(normalizeRun) : [state.simulationRun];
     if (typeof state.homeIntroductionDismissed !== "boolean") state.homeIntroductionDismissed = false;
     if (!state.rewardBudget) state.rewardBudget = clone(demoRewardCampaignBudget);
+    state.withdrawals = state.withdrawals.map((withdrawal) => ({
+      ...withdrawal,
+      idempotencyKey: withdrawal.idempotencyKey ?? null,
+      fundsStatus: withdrawal.fundsStatus ?? (
+        withdrawal.status === "paid" ? "paid" :
+        ["rejected", "cancelled"].includes(withdrawal.status) ? "released" :
+        "frozen"
+      ),
+      failureRecoverable: withdrawal.failureRecoverable ?? (withdrawal.status === "failed" ? true : null)
+    }));
     return state;
   }
 

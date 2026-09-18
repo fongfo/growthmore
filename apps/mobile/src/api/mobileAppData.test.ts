@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { acceptDisclosure, defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, updateHomeIntroduction } from "./mobileAppData";
+import { acceptDisclosure, defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, submitWithdrawal, updateHomeIntroduction } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -96,6 +96,18 @@ describe("mobile API data loader", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel: "mobile" })
+    });
+  });
+
+  it("submits a withdrawal amount with a stable idempotency key", async () => {
+    const withdrawal = fallbackMobileAppData.withdrawals[0]!;
+    const fetcher = vi.fn(async () => jsonResponse({ withdrawal, idempotent: false }, true, 201));
+    const result = await submitWithdrawal(5, "mobile-request-123", defaultApiBaseUrl, fetcher);
+    expect(result.withdrawal.id).toBe(withdrawal.id);
+    expect(fetcher).toHaveBeenCalledWith(defaultApiBaseUrl + "/api/rewards/withdraw", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ amount: 5, idempotencyKey: "mobile-request-123" })
     });
   });
 

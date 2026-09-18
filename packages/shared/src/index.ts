@@ -378,6 +378,9 @@ export type WithdrawalRequest = {
   amount: number;
   currency: "CNY";
   status: WithdrawalStatus;
+  idempotencyKey: string | null;
+  fundsStatus: "frozen" | "released" | "paid";
+  failureRecoverable: boolean | null;
   rewardLedgerEntryIds: RewardLedgerEntry["id"][];
   withdrawalAccount: WithdrawalAccountSnapshot;
   submittedAt: string | null;
@@ -396,7 +399,7 @@ export type WithdrawalSubmissionResult = {
   errors: string[];
 };
 
-export type WithdrawalReviewAction = "approve" | "reject" | "retry";
+export type WithdrawalReviewAction = "approve" | "reject" | "retry" | "settle" | "fail" | "cancel";
 
 export type WithdrawalReviewResult = {
   request: WithdrawalRequest | null;
@@ -1504,6 +1507,9 @@ export function createWithdrawalRequest(
       amount: Number(amount.toFixed(2)),
       currency: rewardJar.currency,
       status: "submitted",
+      idempotencyKey: null,
+      fundsStatus: "frozen",
+      failureRecoverable: null,
       rewardLedgerEntryIds: getAvailableRewardLedgerEntryIds(rewardJar, amount),
       withdrawalAccount: toWithdrawalAccountSnapshot(account),
       submittedAt: createdAt,
@@ -1527,6 +1533,9 @@ export const demoWithdrawalRequests: WithdrawalRequest[] = [
     amount: 5,
     currency: "CNY",
     status: "under_review",
+    idempotencyKey: "demo-review-request",
+    fundsStatus: "frozen",
+    failureRecoverable: null,
     rewardLedgerEntryIds: ["rwd-001", "rwd-002", "rwd-006"],
     withdrawalAccount: toWithdrawalAccountSnapshot(demoLinkedBankAccount),
     submittedAt: "2026-09-01T09:20:00+08:00",
@@ -1545,6 +1554,9 @@ export const demoWithdrawalRequests: WithdrawalRequest[] = [
     amount: 8,
     currency: "CNY",
     status: "rejected",
+    idempotencyKey: "demo-rejected-request",
+    fundsStatus: "released",
+    failureRecoverable: false,
     rewardLedgerEntryIds: ["rwd-004"],
     withdrawalAccount: toWithdrawalAccountSnapshot(demoLinkedBankAccount),
     submittedAt: "2026-08-30T11:00:00+08:00",
@@ -1563,6 +1575,9 @@ export const demoWithdrawalRequests: WithdrawalRequest[] = [
     amount: 5,
     currency: "CNY",
     status: "failed",
+    idempotencyKey: "demo-failed-request",
+    fundsStatus: "frozen",
+    failureRecoverable: true,
     rewardLedgerEntryIds: ["rwd-001", "rwd-002"],
     withdrawalAccount: toWithdrawalAccountSnapshot(demoLinkedBankAccount),
     submittedAt: "2026-08-29T10:10:00+08:00",
@@ -1584,7 +1599,7 @@ export function findDemoWithdrawalRequest(withdrawalId: string): WithdrawalReque
 export function applyWithdrawalReviewAction(
   request: WithdrawalRequest,
   action: WithdrawalReviewAction,
-  options?: { reason?: string; reviewerId?: string }
+  options?: { reason?: string; reviewerId?: string; recoverable?: boolean }
 ): WithdrawalReviewResult {
   const reviewedAt = "2026-09-01T11:00:00+08:00";
   const reviewerId = options?.reviewerId ?? "reviewer-demo-001";
@@ -1609,6 +1624,8 @@ export function applyWithdrawalReviewAction(
       request: {
         ...request,
         status: "rejected",
+        fundsStatus: "released",
+        failureRecoverable: false,
         reviewedAt,
         reviewerId,
         failureReason: null,
@@ -1619,11 +1636,60 @@ export function applyWithdrawalReviewAction(
     };
   }
 
-  if (action === "retry" && request.status === "failed") {
+  if (action === "settle" && request.status === "approved") {
+    return {
+      request: {
+        ...request,
+        status: "paid",
+        fundsStatus: "paid",
+        failureRecoverable: false,
+        failureReason: null,
+        rejectionReason: null,
+        updatedAt: reviewedAt
+      },
+      error: null
+    };
+  }
+
+  if (action === "fail" && ["under_review", "approved"].includes(request.status)) {
+    const recoverable = options?.recoverable ?? true;
+    return {
+      request: {
+        ...request,
+        status: "failed",
+        fundsStatus: recoverable ? "frozen" : "released",
+        failureRecoverable: recoverable,
+        failureReason: options?.reason ?? (recoverable
+          ? "模拟结算暂时失败，奖励保持冻结，可稍后重试。"
+          : "模拟结算最终失败，冻结奖励已释放。"),
+        rejectionReason: null,
+        reviewedAt,
+        reviewerId,
+        updatedAt: reviewedAt
+      },
+      error: null
+    };
+  }
+
+  if (action === "cancel" && ["submitted", "under_review"].includes(request.status)) {
+    return {
+      request: {
+        ...request,
+        status: "cancelled",
+        fundsStatus: "released",
+        failureRecoverable: false,
+        updatedAt: reviewedAt
+      },
+      error: null
+    };
+  }
+
+  if (action === "retry" && request.status === "failed" && request.failureRecoverable === true && request.fundsStatus === "frozen") {
     return {
       request: {
         ...request,
         status: "under_review",
+        failureRecoverable: null,
         reviewedAt: null,
         reviewerId,
         failureReason: null,
