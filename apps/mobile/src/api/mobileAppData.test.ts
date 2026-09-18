@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { acceptDisclosure, defaultApiBaseUrl, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, submitWithdrawal, updateHomeIntroduction } from "./mobileAppData";
+import { acceptDisclosure, defaultApiBaseUrl, emptyMobileAppData, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, submitWithdrawal, updateHomeIntroduction } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -49,18 +49,58 @@ describe("mobile API data loader", () => {
       return jsonResponse(fixtures[path]);
     });
 
-    const data = await loadMobileAppData(defaultApiBaseUrl, fetcher);
+    const { data, errors } = await loadMobileAppData(defaultApiBaseUrl, fetcher);
 
+    expect(errors).toEqual({});
     expect(data.tenant.displayName).toBe("Growthmore Bank");
     expect(data.tasks).toHaveLength(fallbackMobileAppData.tasks.length);
     expect(data.rewardJar.availableAmount).toBe(fallbackMobileAppData.rewardJar.availableAmount);
-    expect(fetcher).toHaveBeenCalledWith(`${defaultApiBaseUrl}/api/app/home`);
+    expect(fetcher).toHaveBeenCalledWith(`${defaultApiBaseUrl}/api/app/home`, expect.objectContaining({ method: "GET" }));
   });
 
-  it("fails fast when an API endpoint is not healthy", async () => {
-    const fetcher = vi.fn(async () => jsonResponse({ error: "offline" }, false, 503));
+  it("keeps successful modules and reports failures without inserting demo balances", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input).replace(defaultApiBaseUrl, "");
+      if (path === "/api/app/home") return jsonResponse({ home: fallbackMobileAppData.home });
+      return jsonResponse({ error: "offline" }, false, 503);
+    });
+    const result = await loadMobileAppData(defaultApiBaseUrl, fetcher, emptyMobileAppData);
+    expect(result.data.home).toEqual(fallbackMobileAppData.home);
+    expect(result.data.rewardJar.availableAmount).toBe(0);
+    expect(result.errors.rewards).toBe("offline");
+    expect(result.errors.home).toBeUndefined();
+  });
 
-    await expect(loadMobileAppData(defaultApiBaseUrl, fetcher)).rejects.toThrow("GET /api/tenant/current failed with 503");
+  it("preserves previously loaded reward facts when only rewards fail", async () => {
+    const previous = { ...emptyMobileAppData, rewardJar: fallbackMobileAppData.rewardJar, rewardLedger: fallbackMobileAppData.rewardLedger };
+    const fetcher = vi.fn(async () => jsonResponse({ error: "offline" }, false, 503));
+    const result = await loadMobileAppData(defaultApiBaseUrl, fetcher, previous, "rewards");
+    expect(result.data.rewardJar.availableAmount).toBe(fallbackMobileAppData.rewardJar.availableAmount);
+    expect(result.errors).toHaveProperty("rewards");
+  });
+
+  it("does not carry cached business facts into a different account", async () => {
+    const previous = { ...emptyMobileAppData, session: fallbackMobileAppData.session, rewardJar: fallbackMobileAppData.rewardJar };
+    const nextSession = {
+      ...fallbackMobileAppData.session,
+      user: { ...fallbackMobileAppData.session.user, id: "mock-user-other", displayName: "Other User" }
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input).replace(defaultApiBaseUrl, "");
+      if (path === "/api/tenant/current") return jsonResponse({ tenant: fallbackMobileAppData.tenant });
+      if (path === "/api/auth/session") return jsonResponse({ session: nextSession });
+      return jsonResponse({ account: fallbackMobileAppData.linkedBankAccount });
+    });
+    const result = await loadMobileAppData(defaultApiBaseUrl, fetcher, previous, "account");
+    expect(result.data.session.user.id).toBe("mock-user-other");
+    expect(result.data.rewardJar.availableAmount).toBe(0);
+  });
+
+  it("maps network failures without reporting a successful write", async () => {
+    const fetcher = vi.fn(async () => { throw new Error("network down"); });
+    await expect(runTaskAction("daily-check-in", "claim", defaultApiBaseUrl, fetcher)).rejects.toThrow(
+      "网络连接失败，操作未完成"
+    );
   });
 
   it("posts a task action and returns the updated task", async () => {

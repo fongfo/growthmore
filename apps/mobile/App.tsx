@@ -165,7 +165,7 @@ export default function App() {
 }
 
 function MobileApp() {
-  const { data, errorMessage, isFallback, refresh, status } = useMobileAppData();
+  const { data, errorMessage, isDemoMode, isFallback, moduleErrors, refresh, setDemoMode, status } = useMobileAppData();
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [allocationDraft, setAllocationDraft] = useState(fallbackMobileAppData.allocationDraft);
   const [allocationInputs, setAllocationInputs] = useState<Record<string, string>>({});
@@ -238,7 +238,7 @@ function MobileApp() {
   } as const;
 
   const handleIntroduction = async (dismissed: boolean) => {
-    if (isFallback) return;
+    if (introductionLoading || isFallback) return;
     setIntroductionLoading(true);
     try {
       await updateHomeIntroduction(dismissed);
@@ -249,7 +249,7 @@ function MobileApp() {
   };
 
   const handleWithdrawal = async () => {
-    if (!canSubmitWithdrawal) return;
+    if (withdrawalAction.loading || !canSubmitWithdrawal) return;
     const requestKey = withdrawalRequestKey.current ?? "mobile-" + data.session.user.id + "-" + Date.now();
     withdrawalRequestKey.current = requestKey;
     setWithdrawalAction({ loading: true, error: null, message: null });
@@ -280,6 +280,7 @@ function MobileApp() {
   };
 
   const handleConfirmDisclosures = async () => {
+    if (disclosureAction.loading) return;
     const pendingIds = complianceSummary.pendingDisclosures.map((disclosure) => disclosure.id);
     if (pendingIds.some((id) => !selectedDisclosureIds.includes(id))) {
       setDisclosureAction({ loading: false, error: t(locale, "compliance.selectAll"), message: null });
@@ -321,6 +322,7 @@ function MobileApp() {
       percent: 0
     };
   const handleRunLearningCycle = async () => {
+    if (reflectionState.loading) return;
     if (isFallback) { setReflectionState({ loading: false, error: t(locale, "task.error.demoMode") }); return; }
     setReflectionState({ loading: true, error: null });
     try {
@@ -346,6 +348,7 @@ function MobileApp() {
   };
 
   const handleSaveAllocation = async () => {
+    if (allocationSaveState.loading) return;
     if (!allocationRiskAccepted) {
       setAllocationSaveState({ loading: false, error: t(locale, "portfolio.confirmRequired"), saved: false });
       return;
@@ -362,7 +365,7 @@ function MobileApp() {
   };
 
   const handleCompleteReflection = async () => {
-    if (!simulationRun) return;
+    if (reflectionState.loading || !simulationRun) return;
     setReflectionState({ loading: true, error: null });
     try {
       const result = await submitSimulationReflection({
@@ -388,7 +391,7 @@ function MobileApp() {
   };
 
   const handleTaskAction = async () => {
-    if (!selectedTask) return;
+    if (taskActionState.loading || !selectedTask) return;
     const action = getTaskAction(selectedTask);
     if (!action) {
       if (selectedTask.status === "claimed") setActiveTab("allocate");
@@ -424,6 +427,7 @@ function MobileApp() {
   };
 
   const handleReadSection = async (sectionId: string) => {
+    if (learningLoading) return;
     if (isFallback) {
       setTaskActionState({ error: t(locale, "task.error.demoMode"), loading: false, message: null });
       return;
@@ -441,6 +445,7 @@ function MobileApp() {
   };
 
   const handleSubmitQuiz = async () => {
+    if (learningLoading) return;
     if (!selectedQuizAnswer) {
       setTaskActionState({ error: t(locale, "learning.error.answer"), loading: false, message: null });
       return;
@@ -504,7 +509,7 @@ function MobileApp() {
           </Card>
         ) : null}
 
-        {status === "error" ? (
+        {status === "error" || status === "partial" ? (
           <Card style={styles.apiStatusPanel}>
             <View style={styles.sectionCopy}>
               <AppText variant="bodyStrong">{t(locale, "api.error.title")}</AppText>
@@ -512,7 +517,24 @@ function MobileApp() {
                 {t(locale, "api.error.body", { error: errorMessage ? ` ${errorMessage}` : "" })}
               </AppText>
             </View>
-            <Button label={t(locale, "action.retryConnection")} onPress={refresh} variant="secondary" />
+            {Object.entries(moduleErrors).map(([module, message]) => (
+              <View key={module} style={styles.sectionCopy}>
+                <AppText color="textSecondary" variant="caption">{t(locale, "api.moduleError", { module, error: message ?? "" })}</AppText>
+                <Button label={t(locale, "action.retryModule", { module })} onPress={() => void refresh(module as Parameters<typeof refresh>[0])} variant="secondary" />
+              </View>
+            ))}
+            <Button label={t(locale, "action.retryConnection")} onPress={() => void refresh()} variant="secondary" />
+            <Button label={t(locale, "action.enterDemo")} onPress={() => setDemoMode(true)} variant="secondary" />
+          </Card>
+        ) : null}
+
+        {isDemoMode ? (
+          <Card style={styles.apiStatusPanel}>
+            <View style={styles.sectionCopy}>
+              <AppText variant="bodyStrong">{t(locale, "api.demo.title")}</AppText>
+              <AppText color="textSecondary" variant="caption">{t(locale, "api.demo.body")}</AppText>
+            </View>
+            <Button label={t(locale, "action.exitDemo")} onPress={() => setDemoMode(false)} variant="secondary" />
           </Card>
         ) : null}
 
@@ -599,6 +621,7 @@ function MobileApp() {
           </Card>
         ) : (
           <Button
+            disabled={isFallback}
             label={t(locale, "today.intro.review")}
             loading={introductionLoading}
             onPress={() => void handleIntroduction(false)}
