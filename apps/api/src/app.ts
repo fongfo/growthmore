@@ -25,6 +25,7 @@ import {
   type UserTask,
   type RewardLedgerEntry,
   type ComplianceSummary,
+  type CampaignConfiguration,
   type DisclosureRequiredFor,
   type DisclosureVersion,
   type TodayHomeSummary,
@@ -34,6 +35,37 @@ import {
 import { DemoStore, type DemoUserState } from "./demoStore.js";
 
 type CreateAppOptions = { databasePath?: string; store?: DemoStore };
+
+type AdminRole = "operator" | "reviewer" | "auditor";
+type AdminIdentity = { id: string; name: string; roles: AdminRole[] };
+
+function resolveAdmin(request: Request): AdminIdentity | null {
+  const token = request.get("x-admin-token");
+  const demoToken = (value: string) => process.env.NODE_ENV === "production" ? "" : value;
+  const configured = [
+    { token: process.env.ADMIN_OPERATOR_TOKEN ?? demoToken("operator-demo"), identity: { id: "ops-demo", name: "活动运营", roles: ["operator"] as AdminRole[] } },
+    { token: process.env.ADMIN_REVIEWER_TOKEN ?? demoToken("reviewer-demo"), identity: { id: "reviewer-demo", name: "提现审核员", roles: ["reviewer"] as AdminRole[] } },
+    { token: process.env.ADMIN_AUDITOR_TOKEN ?? demoToken("auditor-demo"), identity: { id: "auditor-demo", name: "审计员", roles: ["auditor"] as AdminRole[] } },
+    { token: process.env.ADMIN_FULL_ACCESS_TOKEN ?? demoToken("admin-demo"), identity: { id: "admin-demo", name: "演示管理员", roles: ["operator", "reviewer", "auditor"] as AdminRole[] } }
+  ];
+  return configured.find((entry) => entry.token && entry.token === token)?.identity ?? null;
+}
+
+function requireAdminRole(role: AdminRole) {
+  return (_request: Request, response: Response, next: () => void) => {
+    const admin = response.locals.admin as AdminIdentity;
+    if (!admin.roles.includes(role)) {
+      response.status(403).json({ error: "admin_role_required", requiredRole: role });
+      return;
+    }
+    next();
+  };
+}
+
+function maskedIp(request: Request): string {
+  const value = request.ip || "127.0.0.1";
+  return value.includes(":") ? "local:*" : value.replace(/\.\d+$/, ".*");
+}
 
 function bearerToken(request: Request): string | undefined {
   return request.get("authorization")?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -401,10 +433,167 @@ export function createApp(options: CreateAppOptions = {}) {
     });
   });
 
-  app.get("/api/admin/audit-logs", (_request, response) => {
+  app.get("/api/campaign/current", (_request, response) => {
+    const state = currentState(store, response);
+    const publishedCampaign = state.campaign.status === "published"
+      ? state.campaign
+      : [...state.campaignVersions].reverse().find((item) => item.status === "published") ?? null;
+    response.json({ campaign: publishedCampaign });
+  });
+
+  app.get("/api/admin/session", (request, response) => {
+    const admin = resolveAdmin(request);
+    if (!admin) {
+      response.status(401).json({ error: "invalid_admin_credentials" });
+      return;
+    }
+    response.json({ admin });
+  });
+
+  app.use("/api/admin", (request, response, next) => {
+    const admin = resolveAdmin(request);
+    if (!admin) {
+      response.status(401).json({ error: "invalid_admin_credentials" });
+      return;
+    }
+    response.locals.admin = admin;
+    next();
+  });
+
+  app.get("/api/admin/overview", (_request, response) => {
+    const state = currentState(store, response);
+    response.json({
+      campaign: state.campaign,
+      budget: state.rewardBudget,
+      withdrawalCounts: state.withdrawals.reduce<Record<string, number>>((counts, item) => {
+        counts[item.status] = (counts[item.status] ?? 0) + 1;
+        return counts;
+      }, {}),
+      auditCount: state.auditLogs.length
+    });
+  });
+
+  app.get("/api/admin/campaign", requireAdminRole("operator"), (_request, response) => {
+    const state = currentState(store, response);
+    response.json({ campaign: state.campaign, versions: state.campaignVersions });
+  });
+
+  app.put("/api/admin/campaign", requireAdminRole("operator"), (request, response) => {
+    const state = currentState(store, response);
+    const body = request.body ?? {};
+    const values = {
+      totalBudgetAmount: Number(body.budget?.totalBudgetAmount),
+      dailyBudgetAmount: Number(body.budget?.dailyBudgetAmount),
+      userDailyLimitAmount: Number(body.budget?.userDailyLimitAmount),
+      userMonthlyLimitAmount: Number(body.budget?.userMonthlyLimitAmount)
+    };
+    const startsAt = String(body.startsAt ?? "");
+    const endsAt = String(body.endsAt ?? "");
+    const name = String(body.name ?? "").trim();
+    const ruleVersion = String(body.ruleVersion ?? "").trim();
+    const tasks = Array.isArray(body.tasks) ? body.tasks : [];
+    const validTasks = tasks.length > 0 && tasks.every((task: unknown) => {
+      if (!task || typeof task !== "object") return false;
+      const item = task as Record<string, unknown>;
+      return typeof item.taskId === "string" && state.tasks.some((candidate) => candidate.id === item.taskId) &&
+        ["completed", "claimed"].includes(String(item.requiredStatus)) &&
+        Number.isFinite(Number(item.rewardAmount)) && Number(item.rewardAmount) > 0;
+    });
+    const ruleVersionExists = state.campaignVersions.some((item) => item.ruleVersion === ruleVersion);
+    if (!name || !ruleVersion || !startsAt || !endsAt || Date.parse(startsAt) >= Date.parse(endsAt) ||
+      !validTasks ||
+      Object.values(values).some((value) => !Number.isFinite(value) || value <= 0) ||
+      values.totalBudgetAmount < state.rewardBudget.reservedAmount ||
+      values.dailyBudgetAmount < state.rewardBudget.reservedTodayAmount) {
+      response.status(400).json({ error: "invalid_campaign_configuration", message: "请检查活动时间、规则版本和预算；预算不得低于已预留金额。" });
+      return;
+    }
+    if (ruleVersionExists) {
+      response.status(409).json({ error: "campaign_rule_version_exists", message: "已发布规则版本不可覆盖，请使用新的规则版本。" });
+      return;
+    }
+    const admin = response.locals.admin as AdminIdentity;
+    const now = new Date().toISOString();
+    const campaign: CampaignConfiguration = {
+      ...state.campaign,
+      name,
+      startsAt,
+      endsAt,
+      ruleVersion,
+      status: "draft",
+      publishedAt: null,
+      tasks: tasks.map((task: { taskId: string; requiredStatus: "completed" | "claimed"; rewardAmount: number }) => ({
+        taskId: task.taskId,
+        requiredStatus: task.requiredStatus,
+        rewardAmount: Number(task.rewardAmount)
+      })),
+      budget: {
+        ...state.rewardBudget,
+        activityRuleVersion: ruleVersion,
+        totalBudgetAmount: values.totalBudgetAmount,
+        dailyBudgetAmount: values.dailyBudgetAmount,
+        userDailyLimitAmount: values.userDailyLimitAmount,
+        userMonthlyLimitAmount: values.userMonthlyLimitAmount
+      }
+    };
+    store.updateState(currentSession(response).user.id, (current) => ({
+      ...current,
+      campaign,
+      auditLogs: [{
+        id: store.createId("audit"),
+        actorType: "admin",
+        actorId: admin.id,
+        action: "campaign.configured",
+        entityType: "campaign",
+        entityId: campaign.id,
+        occurredAt: now,
+        ipAddressMasked: maskedIp(request),
+        userAgent: String(request.get("user-agent") ?? "growthmore-admin").slice(0, 120),
+        summary: "运营更新活动配置草稿。",
+        metadata: { ruleVersion, totalBudgetAmount: values.totalBudgetAmount }
+      }, ...current.auditLogs]
+    }));
+    response.json({ campaign });
+  });
+
+  app.post("/api/admin/campaign/publish", requireAdminRole("operator"), (request, response) => {
+    const admin = response.locals.admin as AdminIdentity;
+    let campaign = currentState(store, response).campaign;
+    const now = new Date().toISOString();
+    store.updateState(currentSession(response).user.id, (state) => {
+      campaign = { ...state.campaign, status: "published", publishedAt: now };
+      const versionExists = state.campaignVersions.some((item) => item.ruleVersion === campaign.ruleVersion);
+      return {
+        ...state,
+        campaign,
+        campaignVersions: versionExists ? state.campaignVersions.map((item) => item.ruleVersion === campaign.ruleVersion ? campaign : item) : [...state.campaignVersions, campaign],
+        rewardBudget: campaign.budget,
+        auditLogs: [{
+          id: store.createId("audit"),
+          actorType: "admin",
+          actorId: admin.id,
+          action: "campaign.published",
+          entityType: "campaign",
+          entityId: campaign.id,
+          occurredAt: now,
+          ipAddressMasked: maskedIp(request),
+          userAgent: String(request.get("user-agent") ?? "growthmore-admin").slice(0, 120),
+          summary: "运营发布活动规则 " + campaign.ruleVersion + "。",
+          metadata: { ruleVersion: campaign.ruleVersion, totalBudgetAmount: campaign.budget.totalBudgetAmount }
+        }, ...state.auditLogs]
+      };
+    });
+    response.json({ campaign });
+  });
+
+  app.get("/api/admin/audit-logs", requireAdminRole("auditor"), (_request, response) => {
     response.json({
       auditLogs: currentState(store, response).auditLogs
     });
+  });
+
+  app.get("/api/admin/withdrawals", requireAdminRole("reviewer"), (_request, response) => {
+    response.json({ withdrawals: currentState(store, response).withdrawals });
   });
 
   app.get("/api/app/home", (_request, response) => {
@@ -605,7 +794,8 @@ export function createApp(options: CreateAppOptions = {}) {
       }
 
       const now = new Date().toISOString();
-      const rewardAmount = 1.8;
+      const campaignTask = state.campaign.tasks[0];
+      const rewardAmount = campaignTask?.rewardAmount ?? 1.8;
       const todayPrefix = now.slice(0, 10);
       const monthPrefix = now.slice(0, 7);
       const userDailyAmount = state.rewardLedger
@@ -615,15 +805,21 @@ export function createApp(options: CreateAppOptions = {}) {
         .filter((entry) => entry.programId === state.rewardBudget.programId && entry.createdAt.startsWith(monthPrefix))
         .reduce((total, entry) => total + entry.amount, 0);
       const accountEligible = currentSession(response).user.kycStatus === "mock_verified";
+      const configuredTask = campaignTask ? state.tasks.find((item) => item.id === campaignTask.taskId) : undefined;
+      const taskEligible = Boolean(configuredTask) && (
+        configuredTask!.status === campaignTask!.requiredStatus ||
+        (campaignTask!.requiredStatus === "completed" && configuredTask!.status === "claimed")
+      );
       const budgetAvailable =
         state.rewardBudget.reservedAmount + rewardAmount <= state.rewardBudget.totalBudgetAmount &&
         state.rewardBudget.reservedTodayAmount + rewardAmount <= state.rewardBudget.dailyBudgetAmount;
       const withinUserLimits =
         userDailyAmount + rewardAmount <= state.rewardBudget.userDailyLimitAmount &&
         userMonthlyAmount + rewardAmount <= state.rewardBudget.userMonthlyLimitAmount;
-      const canAward = Boolean(existingReward) || (currentRun.startingVirtualAmount > 0 && accountEligible && budgetAvailable && withinUserLimits);
+      const canAward = Boolean(existingReward) || (currentRun.startingVirtualAmount > 0 && taskEligible && accountEligible && budgetAvailable && withinUserLimits);
 
-      if (!accountEligible) lockReason = "账户尚未满足活动资格。";
+      if (!taskEligible) lockReason = "尚未达到当前活动的任务条件。";
+      else if (!accountEligible) lockReason = "账户尚未满足活动资格。";
       else if (!budgetAvailable) lockReason = "活动预算不足，本周期不产生奖励。";
       else if (!withinUserLimits) lockReason = "已达到用户日或月奖励上限。";
       else if (currentRun.startingVirtualAmount <= 0) lockReason = "本周期没有有效学习配置。";
@@ -802,7 +998,7 @@ export function createApp(options: CreateAppOptions = {}) {
   });
 
   for (const action of ["approve", "reject", "retry", "settle", "fail", "cancel"] as const) {
-    app.post(`/api/admin/withdrawals/:withdrawalId/${action}`, (request, response) => {
+    app.post(`/api/admin/withdrawals/:withdrawalId/${action}`, requireAdminRole("reviewer"), (request, response) => {
       const userId = currentSession(response).user.id;
       let updatedWithdrawal = null as ReturnType<typeof applyWithdrawalReviewAction>["request"];
       let transitionError: string | null = null;
@@ -813,7 +1009,7 @@ export function createApp(options: CreateAppOptions = {}) {
         found = true;
         const result = applyWithdrawalReviewAction(withdrawal, action, {
           reason: request.body?.reason,
-          reviewerId: request.body?.reviewerId,
+          reviewerId: (response.locals.admin as AdminIdentity).id,
           recoverable: request.body?.recoverable
         });
         if (result.error || !result.request) {
@@ -922,11 +1118,11 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  app.post("/api/admin/tasks/:taskId/verify", (request, response) => {
+  app.post("/api/admin/tasks/:taskId/verify", requireAdminRole("reviewer"), (request, response) => {
     respondWithTaskAction(
       store,
       response,
-      request.params.taskId,
+      request.params.taskId!,
       request.body?.result === "rejected" ? "reject" : "approve"
     );
   });

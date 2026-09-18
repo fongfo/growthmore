@@ -762,7 +762,7 @@ describe("disclosures and audit logs", () => {
   });
 
   it("returns admin audit logs", async () => {
-    const response = await request(createApp()).get("/api/admin/audit-logs");
+    const response = await request(createApp()).get("/api/admin/audit-logs").set("x-admin-token", "admin-demo");
 
     expect(response.status).toBe(200);
     expect(response.body.auditLogs).toHaveLength(5);
@@ -770,6 +770,57 @@ describe("disclosures and audit logs", () => {
     expect(response.body.auditLogs.every((log: { ipAddressMasked: string; userAgent: string }) => log.ipAddressMasked && log.userAgent)).toBe(true);
   });
 });
+
+describe("admin operations", () => {
+  it("requires an authenticated administrator and enforces role permissions", async () => {
+    await request(createApp()).get("/api/admin/overview").expect(401);
+    await request(createApp()).get("/api/admin/campaign").set("x-admin-token", "reviewer-demo").expect(403);
+    const session = await request(createApp()).get("/api/admin/session").set("x-admin-token", "admin-demo").expect(200);
+    expect(session.body.admin.roles).toEqual(["operator", "reviewer", "auditor"]);
+  });
+
+  it("saves and publishes a versioned campaign that the user API can read", async () => {
+    const app = createApp();
+    const current = await request(app).get("/api/admin/campaign").set("x-admin-token", "operator-demo").expect(200);
+    const next = {
+      ...current.body.campaign,
+      name: "十月成长学习活动",
+      startsAt: "2026-10-01T00:00:00+08:00",
+      endsAt: "2026-10-31T23:59:59+08:00",
+      ruleVersion: "reward-learning-v2",
+      budget: { ...current.body.campaign.budget, totalBudgetAmount: 1200 }
+    };
+    const saved = await request(app).put("/api/admin/campaign").set("x-admin-token", "operator-demo").send(next).expect(200);
+    expect(saved.body.campaign).toMatchObject({ status: "draft", ruleVersion: "reward-learning-v2" });
+    expect((await request(app).get("/api/campaign/current")).body.campaign).toMatchObject({
+      status: "published", ruleVersion: "reward-learning-v1"
+    });
+    await request(app).post("/api/admin/campaign/publish").set("x-admin-token", "operator-demo").expect(200);
+    const published = await request(app).get("/api/campaign/current").expect(200);
+    expect(published.body.campaign).toMatchObject({ status: "published", ruleVersion: "reward-learning-v2" });
+    const history = await request(app).get("/api/admin/campaign").set("x-admin-token", "operator-demo").expect(200);
+    expect(history.body.versions.map((item: { ruleVersion: string }) => item.ruleVersion)).toEqual(["reward-learning-v1", "reward-learning-v2"]);
+  });
+
+  it("keeps published rule versions immutable", async () => {
+    const app = createApp();
+    const current = (await request(app).get("/api/admin/campaign").set("x-admin-token", "operator-demo")).body.campaign;
+    const response = await request(app).put("/api/admin/campaign").set("x-admin-token", "operator-demo")
+      .send({ ...current, name: "覆盖历史版本" }).expect(409);
+    expect(response.body.error).toBe("campaign_rule_version_exists");
+  });
+
+  it("does not let campaign configuration reduce budget below reserved funds or alter balances", async () => {
+    const app = createApp();
+    const balanceBefore = (await request(app).get("/api/rewards/jar")).body.rewardJar;
+    const current = (await request(app).get("/api/admin/campaign").set("x-admin-token", "operator-demo")).body.campaign;
+    await request(app).put("/api/admin/campaign").set("x-admin-token", "operator-demo")
+      .send({ ...current, budget: { ...current.budget, totalBudgetAmount: current.budget.reservedAmount - 1 } }).expect(400);
+    const balanceAfter = (await request(app).get("/api/rewards/jar")).body.rewardJar;
+    expect(balanceAfter).toEqual(balanceBefore);
+  });
+});
+
 describe("withdrawals", () => {
   it("blocks withdrawal until the current withdrawal disclosure is accepted", async () => {
     const response = await request(createApp()).post("/api/rewards/withdraw").send({ amount: 5 });
@@ -817,8 +868,8 @@ describe("withdrawals", () => {
     await request(settledApp).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
     const submitted = await request(settledApp).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "settle-request" });
     const id = submitted.body.withdrawal.id;
-    await request(settledApp).post("/api/admin/withdrawals/" + id + "/approve").expect(200);
-    const settled = await request(settledApp).post("/api/admin/withdrawals/" + id + "/settle").expect(200);
+    await request(settledApp).post("/api/admin/withdrawals/" + id + "/approve").set("x-admin-token", "admin-demo").expect(200);
+    const settled = await request(settledApp).post("/api/admin/withdrawals/" + id + "/settle").set("x-admin-token", "admin-demo").expect(200);
     expect(settled.body.withdrawal).toMatchObject({ status: "paid", fundsStatus: "paid" });
     expect(settledApp.locals.demoStore.getState("mock-user-001").rewardJar.totalBalanceAmount).toBe(8.5);
 
@@ -826,11 +877,11 @@ describe("withdrawals", () => {
     await request(failedApp).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
     const failedSubmission = await request(failedApp).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "final-failure" });
     const failedId = failedSubmission.body.withdrawal.id;
-    await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/approve").expect(200);
-    const failed = await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/fail").send({ recoverable: false }).expect(200);
+    await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/approve").set("x-admin-token", "admin-demo").expect(200);
+    const failed = await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/fail").set("x-admin-token", "admin-demo").send({ recoverable: false }).expect(200);
     expect(failed.body.withdrawal).toMatchObject({ status: "failed", fundsStatus: "released", failureRecoverable: false });
     expect(failedApp.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
-    await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/fail").send({ recoverable: false }).expect(409);
+    await request(failedApp).post("/api/admin/withdrawals/" + failedId + "/fail").set("x-admin-token", "admin-demo").send({ recoverable: false }).expect(409);
     expect(failedApp.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
   });
 
@@ -839,10 +890,10 @@ describe("withdrawals", () => {
     await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
     const submitted = await request(app).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "retry-request" });
     const id = submitted.body.withdrawal.id;
-    await request(app).post("/api/admin/withdrawals/" + id + "/approve").expect(200);
-    const failed = await request(app).post("/api/admin/withdrawals/" + id + "/fail").send({ recoverable: true }).expect(200);
+    await request(app).post("/api/admin/withdrawals/" + id + "/approve").set("x-admin-token", "admin-demo").expect(200);
+    const failed = await request(app).post("/api/admin/withdrawals/" + id + "/fail").set("x-admin-token", "admin-demo").send({ recoverable: true }).expect(200);
     expect(failed.body.withdrawal).toMatchObject({ status: "failed", fundsStatus: "frozen", failureRecoverable: true });
-    const retried = await request(app).post("/api/admin/withdrawals/" + id + "/retry").expect(200);
+    const retried = await request(app).post("/api/admin/withdrawals/" + id + "/retry").set("x-admin-token", "admin-demo").expect(200);
     expect(retried.body.withdrawal).toMatchObject({ status: "under_review", fundsStatus: "frozen" });
     expect(app.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(0.7);
   });
@@ -853,9 +904,9 @@ describe("withdrawals", () => {
       await request(app).post("/api/disclosures/disclosure-withdrawal-v1/accept").send({ channel: "mobile" }).expect(201);
       const submitted = await request(app).post("/api/rewards/withdraw").send({ amount: 5, idempotencyKey: "release-" + action });
       const id = submitted.body.withdrawal.id;
-      await request(app).post("/api/admin/withdrawals/" + id + "/" + action).expect(200);
+      await request(app).post("/api/admin/withdrawals/" + id + "/" + action).set("x-admin-token", "admin-demo").expect(200);
       expect(app.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
-      await request(app).post("/api/admin/withdrawals/" + id + "/" + action).expect(409);
+      await request(app).post("/api/admin/withdrawals/" + id + "/" + action).set("x-admin-token", "admin-demo").expect(409);
       expect(app.locals.demoStore.getState("mock-user-001").rewardJar.availableAmount).toBe(5.7);
     }
   });
@@ -906,17 +957,17 @@ describe("withdrawals", () => {
   });
 
   it("supports admin withdrawal approve, reject, and retry actions", async () => {
-    const approved = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-09-review/approve").send({
+    const approved = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-09-review/approve").set("x-admin-token", "admin-demo").send({
       reviewerId: "ops-demo"
     });
-    const rejected = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-09-review/reject").send({
+    const rejected = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-09-review/reject").set("x-admin-token", "admin-demo").send({
       reason: "账户信息不一致"
     });
-    const retried = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-08-failed/retry");
+    const retried = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-08-failed/retry").set("x-admin-token", "admin-demo");
 
     expect(approved.status).toBe(200);
     expect(approved.body.withdrawal.status).toBe("approved");
-    expect(approved.body.withdrawal.reviewerId).toBe("ops-demo");
+    expect(approved.body.withdrawal.reviewerId).toBe("admin-demo");
     expect(rejected.status).toBe(200);
     expect(rejected.body.withdrawal.status).toBe("rejected");
     expect(rejected.body.withdrawal.rejectionReason).toBe("账户信息不一致");
@@ -925,8 +976,8 @@ describe("withdrawals", () => {
   });
 
   it("rejects unknown or invalid admin withdrawal transitions", async () => {
-    const missing = await request(createApp()).post("/api/admin/withdrawals/missing/approve");
-    const invalid = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-08-rejected/retry");
+    const missing = await request(createApp()).post("/api/admin/withdrawals/missing/approve").set("x-admin-token", "admin-demo");
+    const invalid = await request(createApp()).post("/api/admin/withdrawals/withdrawal-2026-08-rejected/retry").set("x-admin-token", "admin-demo");
 
     expect(missing.status).toBe(404);
     expect(missing.body.error).toBe("withdrawal_not_found");
@@ -982,10 +1033,10 @@ describe("task system", () => {
   });
 
   it("supports approving or rejecting a pending task", async () => {
-    const approved = await request(createApp()).post("/api/admin/tasks/auto-savings-mock/verify").send({
+    const approved = await request(createApp()).post("/api/admin/tasks/auto-savings-mock/verify").set("x-admin-token", "admin-demo").send({
       result: "approved"
     });
-    const rejected = await request(createApp()).post("/api/admin/tasks/auto-savings-mock/verify").send({
+    const rejected = await request(createApp()).post("/api/admin/tasks/auto-savings-mock/verify").set("x-admin-token", "admin-demo").send({
       result: "rejected"
     });
 
