@@ -380,6 +380,14 @@ const taskCopy: Record<string, Partial<Record<Locale, Pick<UserTask, "title" | "
       riskNotice: "Frequent device or account switching may trigger a duplicate-claim review."
     }
   },
+  "first-deposit-mock": {
+    "en-US": {
+      title: "Complete a first-deposit mock",
+      description: "Record a simulated first deposit to demonstrate bank-task verification.",
+      completionCriteria: "The simulated transfer must be at least CNY 100.",
+      riskNotice: "This is a simulated event and does not initiate a real transfer or create a deposit."
+    }
+  },
   "profile-kyc-mock": {
     "en-US": {
       title: "Complete profile mock",

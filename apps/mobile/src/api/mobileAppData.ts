@@ -265,12 +265,14 @@ export async function runTaskAction(
   taskId: string,
   action: MobileTaskAction,
   apiBaseUrl = defaultApiBaseUrl,
-  fetcher: Fetcher = fetch
+  fetcher: Fetcher = fetch,
+  submission?: { eventId: string; values: Record<string, string | number | boolean> }
 ): Promise<TaskActionResponse> {
   const baseUrl = apiBaseUrl.replace(/\/$/, "");
   const path = "/api/tasks/" + encodeURIComponent(taskId) + "/" + action;
   return requestJson<TaskActionResponse>(baseUrl, path, {
     method: "POST",
+    body: submission ? JSON.stringify(submission) : undefined
   }, fetcher);
 }
 

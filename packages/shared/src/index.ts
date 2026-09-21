@@ -125,6 +125,15 @@ export type UserTask = TaskDefinition & {
   completedAt: string | null;
   claimedAt: string | null;
   updatedAt: string;
+  submission: TaskSubmission | null;
+};
+
+export type TaskSubmission = {
+  eventId: string;
+  submittedAt: string;
+  values: Record<string, string | number | boolean>;
+  outcome: "mock_verified";
+  disclosure: string;
 };
 
 export type TaskBoardSummary = {
@@ -689,7 +698,8 @@ function withUserTaskState(task: TaskDefinition, status: TaskStatus, state?: Par
     submittedAt: state?.submittedAt ?? null,
     completedAt: state?.completedAt ?? null,
     claimedAt: state?.claimedAt ?? null,
-    updatedAt: state?.updatedAt ?? demoNow
+    updatedAt: state?.updatedAt ?? demoNow,
+    submission: state?.submission ?? null
   };
 }
 
@@ -776,7 +786,18 @@ const taskDefinitions: TaskDefinition[] = [
     expiresAt: demoTaskExpiry,
     estimatedMinutes: 1
   }
-];
+,
+  {
+    id: "first-deposit-mock",
+    category: "banking",
+    title: "完成首次转入 mock",
+    description: "记录一笔模拟首存，用于演示银行任务校验。",
+    completionCriteria: "模拟转入金额不少于 100 元。",
+    riskNotice: "这只是模拟事件，不会发起真实转账或产生存款。",
+    reward: { virtualGrowthAmount: 600, rewardJarAmount: 1, currency: "CNY" },
+    expiresAt: demoTaskExpiry,
+    estimatedMinutes: 2
+  }];
 
 export const demoUserTasks: UserTask[] = [
   withUserTaskState(taskDefinitions[0]!, "available"),
@@ -800,7 +821,8 @@ export const demoUserTasks: UserTask[] = [
     submittedAt: "2026-08-24T12:01:00+08:00",
     completedAt: "2026-08-24T12:02:00+08:00",
     claimedAt: "2026-08-24T12:03:00+08:00"
-  })
+  }),
+  withUserTaskState(taskDefinitions[6]!, "available")
 ];
 
 function createEmptyStatusCounts(): Record<TaskStatus, number> {

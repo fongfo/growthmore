@@ -239,6 +239,11 @@ export class DemoStore {
       | undefined;
     if (!row) throw new Error(`Demo user does not exist: ${userId}`);
     const state = JSON.parse(row.state_json) as DemoUserState;
+    const storedTaskIds = new Set(state.tasks.map((task) => task.id));
+    state.tasks = [
+      ...state.tasks.map((task) => ({ ...task, submission: task.submission ?? null })),
+      ...demoUserTasks.filter((task) => !storedTaskIds.has(task.id)).map((task) => ({ ...clone(task), userId }))
+    ];
     if (!Array.isArray(state.learningProgress)) {
       state.learningProgress = [{
         lessonId: demoIntroLesson.id,

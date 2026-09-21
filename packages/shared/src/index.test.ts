@@ -143,9 +143,9 @@ describe("task state machine", () => {
     const summary = createTaskBoardSummary(demoUserTasks);
 
     expect(summary).toEqual(demoTaskBoardSummary);
-    expect(summary.totalTaskCount).toBe(6);
+    expect(summary.totalTaskCount).toBe(7);
     expect(summary.statusCounts).toMatchObject({
-      available: 1,
+      available: 2,
       in_progress: 1,
       pending_verification: 1,
       completed: 1,
