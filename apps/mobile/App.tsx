@@ -27,13 +27,16 @@ import { acceptDisclosure, fallbackMobileAppData, loadLearningLesson, markLesson
 import { useMobileAppData } from "./src/api/useMobileAppData";
 import {
   formatCurrency,
+  formatDateTime,
   formatInteger,
   formatSignedAmount,
   formatSignedPercent,
   getDisclosureTypeLabel,
+  getLedgerSourceLabel,
   getRewardStatusLabel,
   getTaskStatusCopy,
   getWithdrawalStatusLabel,
+  getVirtualEntryTypeLabel,
   localeOptions,
   t,
   translateAllocationExample,
@@ -45,6 +48,7 @@ import {
   translateText,
   type Locale
 } from "./src/i18n";
+import { loadLocalePreference, saveLocalePreference } from "./src/preferences";
 import { colors, spacing, touch } from "./src/theme";
 import { type IconName } from "./src/components";
 import { filterTasks, getTaskAction, type TaskFilterId } from "./src/taskFlow";
@@ -172,6 +176,10 @@ function MobileApp() {
   const [allocationRiskAccepted, setAllocationRiskAccepted] = useState(false);
   const [allocationSaveState, setAllocationSaveState] = useState<{ loading: boolean; error: string | null; saved: boolean }>({ loading: false, error: null, saved: false });
   const [locale, setLocale] = useState<Locale>("zh-CN");
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [showIntroduction, setShowIntroduction] = useState(false);
+  const [virtualHistoryLimit, setVirtualHistoryLimit] = useState(3);
+  const [rewardHistoryLimit, setRewardHistoryLimit] = useState(4);
   const [simulationRun, setSimulationRun] = useState<SimulationCycleRun | null>(fallbackMobileAppData.simulationRun);
   const [reflectionComplete, setReflectionComplete] = useState(false);
   const [reflectionAnswers, setReflectionAnswers] = useState<Record<string, string>>({});
@@ -196,6 +204,14 @@ function MobileApp() {
   const withdrawalRequestKey = useRef<string | null>(null);
 
   useEffect(() => {
+    void loadLocalePreference()
+      .then((savedLocale) => {
+        if (savedLocale) setLocale(savedLocale);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     setAllocationDraft(data.allocationDraft);
     setAllocationInputs(Object.fromEntries(data.allocationDraft.allocations.map((item) => [item.productId, String(item.amount)])));
     setSimulationRun(data.simulationRun);
@@ -215,12 +231,16 @@ function MobileApp() {
   const taskList = filterTasks(data.tasks, taskFilter).map((task) => translateTask(locale, task));
   const selectedTask = data.tasks.find((task) => task.id === selectedTaskId);
   const localizedSelectedTask = selectedTask ? translateTask(locale, selectedTask) : null;
-  const recentLedger = data.virtualBalanceLedger.slice(-3).reverse();
+  const recentLedger = [...data.virtualBalanceLedger]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, virtualHistoryLimit);
   const progressPercent = Math.round(home.level.progressPercent * 100);
   const virtualGrowthAmount = formatInteger(locale, data.virtualBalance.availableAmount);
   const rewardJarAmount = formatCurrency(locale, home.balances.rewardJarAmount);
   const rewardJar = data.rewardJar;
-  const recentRewardLedger = data.rewardLedger.slice(0, 4);
+  const recentRewardLedger = [...data.rewardLedger]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, rewardHistoryLimit);
   const withdrawalRequests = data.withdrawals.slice(0, 3);
   const parsedWithdrawalAmount = Number(withdrawalAmount);
   const withdrawalErrors = validateWithdrawalRequest(rewardJar, data.linkedBankAccount, parsedWithdrawalAmount);
@@ -246,6 +266,17 @@ function MobileApp() {
     } finally {
       setIntroductionLoading(false);
     }
+  };
+
+  const handleLocaleChange = (nextLocale: Locale) => {
+    setLocale(nextLocale);
+    void saveLocalePreference(nextLocale).catch(() => undefined);
+  };
+
+  const handleReviewIntroduction = () => {
+    setHelpOpen(false);
+    setActiveTab("today");
+    setShowIntroduction(true);
   };
 
   const handleWithdrawal = async () => {
@@ -481,26 +512,56 @@ function MobileApp() {
           </View>
           <View style={styles.topActions}>
             <Badge iconName={status === "loading" ? "cloud-sync-outline" : isFallback ? "database-eye-outline" : "cloud-check-outline"} label={status === "loading" ? t(locale, "api.status.loading") : isFallback ? t(locale, "api.status.demo") : t(locale, "api.status.connected")} tone={isFallback ? "learning" : "success"} />
-            <View accessibilityLabel={t(locale, "tabs.language")} style={styles.languageSwitch}>
-              {localeOptions.map((option) => {
-                const selected = locale === option.value;
-
-                return (
-                  <Pressable
-                    accessibilityLabel={option.label}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    key={option.value}
-                    onPress={() => setLocale(option.value)}
-                    style={[styles.languageOption, selected ? styles.languageOptionActive : undefined]}
-                  >
-                    <AppText color={selected ? "inverseText" : "textSecondary"} variant="label">{option.label}</AppText>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <Pressable
+              accessibilityLabel={t(locale, "help.open")}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: helpOpen }}
+              onPress={() => setHelpOpen((open) => !open)}
+              style={({ pressed }) => [styles.avatarButton, pressed ? styles.languageOptionPressed : undefined]}
+            >
+              <AppText color="inverseText" variant="bodyStrong">{data.session.user.displayName.slice(0, 1).toUpperCase()}</AppText>
+            </Pressable>
           </View>
         </View>
+
+        {helpOpen ? (
+          <Card style={styles.helpPanel} tone="learning">
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionCopy}>
+                <AppText color="learning" variant="eyebrow">{t(locale, "help.title")}</AppText>
+                <AppText variant="heading">{data.session.user.displayName}</AppText>
+              </View>
+              <Button label={t(locale, "help.close")} onPress={() => setHelpOpen(false)} variant="ghost" />
+            </View>
+            {(["what", "start", "balance", "claim", "rules"] as const).map((topic) => (
+              <View key={topic} style={styles.helpTopic}>
+                <AppText variant="bodyStrong">{t(locale, `help.${topic}.title`)}</AppText>
+                <AppText color="textSecondary" variant="caption">{t(locale, `help.${topic}.body`)}</AppText>
+              </View>
+            ))}
+            <Button label={t(locale, "help.reviewIntro")} onPress={handleReviewIntroduction} variant="secondary" />
+            <View style={styles.helpTopic}>
+              <AppText variant="bodyStrong">{t(locale, "preferences.language")}</AppText>
+              <View accessibilityLabel={t(locale, "tabs.language")} style={styles.languageSwitch}>
+                {localeOptions.map((option) => {
+                  const selected = locale === option.value;
+                  return (
+                    <Pressable
+                      accessibilityLabel={option.label}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      key={option.value}
+                      onPress={() => handleLocaleChange(option.value)}
+                      style={({ pressed }) => [styles.languageOption, selected ? styles.languageOptionActive : undefined, pressed ? styles.languageOptionPressed : undefined]}
+                    >
+                      <AppText color={selected ? "inverseText" : "textSecondary"} variant="label">{option.label}</AppText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          </Card>
+        ) : null}
 
         {status === "loading" ? (
           <Card style={styles.apiStatusPanel}>
@@ -606,16 +667,15 @@ function MobileApp() {
 
         {activeTab === "today" ? (
         <>
-        {!home.introduction.dismissed ? (
+        {!home.introduction.dismissed || showIntroduction ? (
           <Card style={styles.introductionPanel} tone="learning">
             <AppText color="learning" variant="eyebrow">{t(locale, "today.intro.eyebrow")}</AppText>
             <AppText variant="title">{t(locale, "today.intro.title")}</AppText>
             <AppText color="textSecondary" variant="body">{t(locale, "today.intro.body")}</AppText>
             <Button
-              disabled={isFallback}
               label={t(locale, "today.intro.dismiss")}
               loading={introductionLoading}
-              onPress={() => void handleIntroduction(true)}
+              onPress={() => { setShowIntroduction(false); void handleIntroduction(true); }}
               variant="secondary"
             />
           </Card>
@@ -702,13 +762,18 @@ function MobileApp() {
               <AppText variant="bodyStrong">{formatInteger(locale, data.virtualBalance.frozenAmount)}</AppText>
             </View>
           </View>
+          <AppText variant="bodyStrong">{t(locale, "history.virtual.title")}</AppText>
           <View style={styles.ledgerList}>
+            {recentLedger.length === 0 ? <AppText color="textSecondary" variant="caption">{t(locale, "history.empty")}</AppText> : null}
             {recentLedger.map((entry) => (
               <View key={entry.id} style={styles.ledgerRow}>
                 <View style={styles.sectionCopy}>
                   <AppText variant="bodyStrong">{translateText(locale, entry.description)}</AppText>
                   <AppText color="textSecondary" variant="caption">
-                    {entry.createdAt.slice(0, 10)}
+                    {getVirtualEntryTypeLabel(locale, entry.entryType)} · {t(locale, "history.source", { source: getLedgerSourceLabel(locale, entry.sourceType) })}
+                  </AppText>
+                  <AppText color="textSecondary" variant="caption">
+                    {t(locale, "history.time", { time: formatDateTime(locale, entry.createdAt) })}
                   </AppText>
                 </View>
                 <AppText color={entry.entryType === "clawback" || entry.entryType === "freeze" ? "danger" : "success"} variant="label">
@@ -717,6 +782,13 @@ function MobileApp() {
               </View>
             ))}
           </View>
+          {data.virtualBalanceLedger.length > 3 ? (
+            <Button
+              label={virtualHistoryLimit < data.virtualBalanceLedger.length ? t(locale, "action.showMore") : t(locale, "action.showLess")}
+              onPress={() => setVirtualHistoryLimit((limit) => limit < data.virtualBalanceLedger.length ? Math.min(limit + 5, data.virtualBalanceLedger.length) : 3)}
+              variant="secondary"
+            />
+          ) : null}
         </Card>
 
 
@@ -1234,13 +1306,18 @@ function MobileApp() {
               ))}
             </View>
           </View>
+          <AppText variant="bodyStrong">{t(locale, "history.reward.title")}</AppText>
           <View style={styles.rewardLedgerList}>
+            {recentRewardLedger.length === 0 ? <AppText color="textSecondary" variant="caption">{t(locale, "history.empty")}</AppText> : null}
             {recentRewardLedger.map((entry) => (
               <View key={entry.id} style={styles.rewardLedgerRow}>
                 <View style={styles.sectionCopy}>
                   <AppText variant="bodyStrong">{translateText(locale, entry.description)}</AppText>
                   <AppText color="textSecondary" variant="caption">
-                    {entry.sourceType} · {entry.activityRuleVersion} · {entry.budgetBatchId}
+                    {t(locale, "history.source", { source: getLedgerSourceLabel(locale, entry.sourceType) })}
+                  </AppText>
+                  <AppText color="textSecondary" variant="caption">
+                    {t(locale, "history.time", { time: formatDateTime(locale, entry.createdAt) })}
                   </AppText>
                   {entry.lockReason ? (
                     <AppText color="textSecondary" variant="caption">{translateText(locale, entry.lockReason)}</AppText>
@@ -1255,6 +1332,13 @@ function MobileApp() {
               </View>
             ))}
           </View>
+          {data.rewardLedger.length > 4 ? (
+            <Button
+              label={rewardHistoryLimit < data.rewardLedger.length ? t(locale, "action.showMore") : t(locale, "action.showLess")}
+              onPress={() => setRewardHistoryLimit((limit) => limit < data.rewardLedger.length ? Math.min(limit + 5, data.rewardLedger.length) : 4)}
+              variant="secondary"
+            />
+          ) : null}
 
           <DisclosureBanner body={translateText(locale, rewardJar.disclosure) ?? rewardJar.disclosure} title={t(locale, "disclosure.reward.title")} />
         </Card>
@@ -1368,6 +1452,20 @@ const styles = StyleSheet.create({
     alignItems: "flex-end",
     gap: spacing.sm
   },
+  avatarButton: {
+    alignItems: "center",
+    backgroundColor: colors.light.primary,
+    borderRadius: 999,
+    height: touch.minCompactTarget,
+    justifyContent: "center",
+    width: touch.minCompactTarget
+  },
+  helpPanel: {
+    gap: spacing.md
+  },
+  helpTopic: {
+    gap: spacing.xs
+  },
   languageSwitch: {
     backgroundColor: colors.light.surfaceMuted,
     borderColor: colors.light.border,
@@ -1387,6 +1485,9 @@ const styles = StyleSheet.create({
   },
   languageOptionActive: {
     backgroundColor: colors.light.primary
+  },
+  languageOptionPressed: {
+    opacity: 0.72
   },
   identityBlock: {
     flex: 1,

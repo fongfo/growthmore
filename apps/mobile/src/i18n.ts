@@ -1,5 +1,6 @@
 import {
   type DisclosureType,
+  type RewardLedgerSourceType,
   type RewardStatus,
   type SimulationAllocationExample,
   type SimulationCycleRun,
@@ -7,6 +8,8 @@ import {
   type TaskBoardSummary,
   type TaskStatus,
   type UserTask,
+  type VirtualBalanceLedgerEntryType,
+  type VirtualBalanceLedgerSourceType,
   type WithdrawalStatus
 } from "@growthmore/shared";
 
@@ -35,6 +38,8 @@ const messages: Record<Locale, Messages> = {
     "action.runCycle": "运行周期",
     "action.startTodayTask": "开始今日任务",
     "action.submitWithdrawal": "提交申请",
+    "action.showMore": "查看更多",
+    "action.showLess": "收起",
     "api.error.body": "部分业务数据暂时不可用，已成功加载的内容会保留。写操作不会假报成功。{error}",
     "api.error.title": "部分数据需要重试",
     "api.moduleError": "{module}：{error}",
@@ -56,6 +61,26 @@ const messages: Record<Locale, Messages> = {
     "badge.ruleRequired": "需满足规则",
     "badge.withdrawalClosed": "窗口未开放",
     "badge.withdrawalOpen": "窗口开放",
+    "help.open": "打开帮助与偏好",
+    "help.title": "帮助、规则与偏好",
+    "help.what.title": "Growthmore 可以做什么？",
+    "help.what.body": "完成任务获得虚拟成长金，用它配置模拟组合并复盘风险；符合活动规则后，奖励会进入奖励罐。",
+    "help.start.title": "如何开始？",
+    "help.start.body": "按今日页的三步完成任务、模拟配置和学习复盘。",
+    "help.balance.title": "两类余额有什么区别？",
+    "help.balance.body": "成长金仅用于模拟学习，不能提现；奖励罐来自银行活动预算，符合规则后才可申请领取。",
+    "help.claim.title": "为什么暂时不能领取？",
+    "help.claim.body": "请检查奖励状态、最低领取金额、领取窗口、银行卡和必要披露。待校验、锁定或审核中的金额暂不可领取。",
+    "help.rules.title": "规则说明",
+    "help.rules.body": "奖励以活动版本和预算为准；模拟收益不保证真实奖励，重复操作不会重复入账。",
+    "help.reviewIntro": "重看三步介绍",
+    "help.close": "关闭帮助",
+    "preferences.language": "语言偏好",
+    "history.virtual.title": "成长金历史",
+    "history.reward.title": "奖励历史",
+    "history.empty": "暂无记录",
+    "history.source": "来源：{source}",
+    "history.time": "时间：{time}",
     "compliance.count": "已确认 {accepted} / {required} 项当前披露",
     "compliance.heading": "必要披露与确认",
     "compliance.selectAll": "请逐项勾选待确认披露后继续。",
@@ -178,6 +203,8 @@ const messages: Record<Locale, Messages> = {
     "action.runCycle": "Run Cycle",
     "action.startTodayTask": "Start Today's Task",
     "action.submitWithdrawal": "Submit Request",
+    "action.showMore": "Show More",
+    "action.showLess": "Show Less",
     "api.error.body": "Some account data is unavailable. Successfully loaded modules remain visible, and writes never report false success. {error}",
     "api.error.title": "Some data needs attention",
     "api.moduleError": "{module}: {error}",
@@ -199,6 +226,26 @@ const messages: Record<Locale, Messages> = {
     "badge.ruleRequired": "Rules Required",
     "badge.withdrawalClosed": "Window Closed",
     "badge.withdrawalOpen": "Window Open",
+    "help.open": "Open help and preferences",
+    "help.title": "Help, Rules, and Preferences",
+    "help.what.title": "What can Growthmore do?",
+    "help.what.body": "Complete tasks to earn virtual growth credits, use them in a simulated portfolio, and review risk. Eligible campaign rewards are added to the reward jar.",
+    "help.start.title": "How do I start?",
+    "help.start.body": "Follow the three steps on Today: complete a task, make a simulated allocation, and finish the learning review.",
+    "help.balance.title": "How are the two balances different?",
+    "help.balance.body": "Growth credits are only for simulation learning and cannot be withdrawn. Reward jar funds come from campaign budgets and can be requested only when rules are met.",
+    "help.claim.title": "Why can't I claim a reward yet?",
+    "help.claim.body": "Check the reward status, minimum amount, claim window, linked bank account, and required disclosures. Pending, locked, or under-review funds cannot be claimed yet.",
+    "help.rules.title": "Rules",
+    "help.rules.body": "Campaign versions and budgets determine rewards. Simulation gains do not guarantee a real reward, and repeated actions do not create duplicate credits.",
+    "help.reviewIntro": "Review the Three-Step Introduction",
+    "help.close": "Close Help",
+    "preferences.language": "Language Preference",
+    "history.virtual.title": "Growth Credit History",
+    "history.reward.title": "Reward History",
+    "history.empty": "No history yet",
+    "history.source": "Source: {source}",
+    "history.time": "Time: {time}",
     "compliance.count": "{accepted} of {required} current disclosures confirmed",
     "compliance.heading": "Required Disclosures",
     "compliance.selectAll": "Select each pending disclosure before continuing.",
@@ -577,6 +624,49 @@ export function formatCurrency(locale: Locale, amount: number): string {
     minimumFractionDigits: 2,
     style: "currency"
   }).format(amount);
+}
+
+export function formatDateTime(locale: Locale, value: string): string {
+  return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+export function getVirtualEntryTypeLabel(locale: Locale, type: VirtualBalanceLedgerEntryType): string {
+  const labels: Record<Locale, Record<VirtualBalanceLedgerEntryType, string>> = {
+    "zh-CN": { earn: "获得", allocate: "配置", release: "释放", freeze: "冻结", clawback: "扣回", adjust: "调整" },
+    "en-US": { earn: "Earned", allocate: "Allocated", release: "Released", freeze: "Frozen", clawback: "Reversed", adjust: "Adjusted" }
+  };
+  return labels[locale][type];
+}
+
+export function getLedgerSourceLabel(locale: Locale, source: VirtualBalanceLedgerSourceType | RewardLedgerSourceType): string {
+  const labels: Record<Locale, Record<VirtualBalanceLedgerSourceType | RewardLedgerSourceType, string>> = {
+    "zh-CN": {
+      task: "任务",
+      simulation_allocation: "模拟配置",
+      risk_review: "风险复盘",
+      admin_adjustment: "人工调整",
+      learning_cycle: "学习周期",
+      campaign_budget: "活动预算",
+      manual_review: "人工审核",
+      withdrawal: "奖励申请"
+    },
+    "en-US": {
+      task: "Task",
+      simulation_allocation: "Simulation allocation",
+      risk_review: "Risk review",
+      admin_adjustment: "Manual adjustment",
+      learning_cycle: "Learning cycle",
+      campaign_budget: "Campaign budget",
+      manual_review: "Manual review",
+      withdrawal: "Reward request"
+    }
+  };
+  return labels[locale][source];
 }
 
 export function formatSignedPercent(value: number): string {
