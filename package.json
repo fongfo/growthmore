@@ -29,6 +29,8 @@
   },
   "overrides": {
     "expo-font": "~14.0.12",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "proxy-addr": "2.0.8",
+    "shell-quote": "1.12.0"
   }
 }
