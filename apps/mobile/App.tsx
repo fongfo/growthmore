@@ -190,6 +190,7 @@ function MobileApp() {
   const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
   const [selectedQuizAnswer, setSelectedQuizAnswer] = useState<string>("");
   const [learningLoading, setLearningLoading] = useState(false);
+  const [taskDrafts, setTaskDrafts] = useState<Record<string, Record<string, string | number | boolean>>>({});
   const [taskActionState, setTaskActionState] = useState<{
     error: string | null;
     loading: boolean;
@@ -419,6 +420,25 @@ function MobileApp() {
     setTaskFilter(filterId);
     setSelectedTaskId(firstTask?.id ?? "");
     setTaskActionState({ error: null, loading: false, message: null });
+  };
+
+  const mockInputTaskIds = ["savings-goal", "profile-kyc-mock", "bank-account-linked", "first-deposit-mock", "auto-savings-mock"];
+  const selectedTaskValues = selectedTask ? (taskDrafts[selectedTask.id] ?? selectedTask.submission?.values ?? {}) : {};
+  const setTaskValue = (field: string, value: string | number | boolean) => {
+    if (!selectedTask) return;
+    setTaskDrafts((current) => ({ ...current, [selectedTask.id]: { ...(current[selectedTask.id] ?? selectedTask.submission?.values ?? {}), [field]: value } }));
+    setTaskActionState({ error: null, loading: false, message: null });
+  };
+  const handleMockTaskSubmit = async () => {
+    if (!selectedTask || taskActionState.loading || isFallback) return;
+    setTaskActionState({ error: null, loading: true, message: null });
+    try {
+      await runTaskAction(selectedTask.id, "submit", undefined, undefined, { eventId: `mobile-${selectedTask.id}-${Date.now()}`, values: selectedTaskValues });
+      await refresh();
+      setTaskActionState({ error: null, loading: false, message: locale === "en-US" ? "Mock result verified and saved." : "模拟结果已验证并保存。" });
+    } catch (error) {
+      setTaskActionState({ error: error instanceof Error ? error.message : t(locale, "task.error.action"), loading: false, message: null });
+    }
   };
 
   const handleTaskAction = async () => {
@@ -1045,6 +1065,18 @@ function MobileApp() {
                   <AppText color="danger" variant="caption">{localizedSelectedTask.rejectionReason}</AppText>
                 </View>
               ) : null}
+              {mockInputTaskIds.includes(localizedSelectedTask.id) && localizedSelectedTask.status !== "available" ? (
+                <View style={styles.mockTaskForm}>
+                  <AppText color="learning" variant="eyebrow">{locale === "en-US" ? "SIMULATED BANK FLOW" : "模拟银行操作"}</AppText>
+                  {localizedSelectedTask.id === "savings-goal" ? <><TextInput accessibilityLabel="目标名称" placeholder={locale === "en-US" ? "Goal name" : "目标名称"} value={String(selectedTaskValues.name ?? "")} onChangeText={(value) => setTaskValue("name", value)} style={styles.mockTaskInput} /><TextInput accessibilityLabel="目标金额" keyboardType="decimal-pad" placeholder={locale === "en-US" ? "Target amount" : "目标金额"} value={String(selectedTaskValues.targetAmount ?? "")} onChangeText={(value) => setTaskValue("targetAmount", value)} style={styles.mockTaskInput} /><TextInput accessibilityLabel="已储蓄金额" keyboardType="decimal-pad" placeholder={locale === "en-US" ? "Saved so far" : "当前已储蓄"} value={String(selectedTaskValues.savedAmount ?? "")} onChangeText={(value) => setTaskValue("savedAmount", value)} style={styles.mockTaskInput} /></> : null}
+                  {localizedSelectedTask.id === "profile-kyc-mock" ? <><TextInput accessibilityLabel="姓名" placeholder={locale === "en-US" ? "Full name" : "姓名"} value={String(selectedTaskValues.fullName ?? "")} onChangeText={(value) => setTaskValue("fullName", value)} style={styles.mockTaskInput} /><TextInput accessibilityLabel="模拟证件尾号" keyboardType="number-pad" maxLength={4} placeholder={locale === "en-US" ? "Mock ID last 4 digits" : "模拟证件尾号 4 位"} value={String(selectedTaskValues.identityLast4 ?? "")} onChangeText={(value) => setTaskValue("identityLast4", value)} style={styles.mockTaskInput} /><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selectedTaskValues.confirmMock === true }} onPress={() => setTaskValue("confirmMock", selectedTaskValues.confirmMock !== true)} style={styles.riskCheckRow}><AppIcon color={selectedTaskValues.confirmMock === true ? "success" : "textSecondary"} name={selectedTaskValues.confirmMock === true ? "checkbox-marked" : "checkbox-blank-outline"} size="md" /><AppText variant="body">{locale === "en-US" ? "I understand this is not real KYC." : "我确认这不是实际 KYC。"}</AppText></Pressable></> : null}
+                  {localizedSelectedTask.id === "bank-account-linked" ? <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: selectedTaskValues.confirmAccount === true }} onPress={() => setTaskValue("confirmAccount", selectedTaskValues.confirmAccount !== true)} style={styles.riskCheckRow}><AppIcon color={selectedTaskValues.confirmAccount === true ? "success" : "textSecondary"} name={selectedTaskValues.confirmAccount === true ? "checkbox-marked" : "checkbox-blank-outline"} size="md" /><AppText variant="body">{locale === "en-US" ? "Confirm the displayed mock account." : "确认绑定当前展示的模拟账户。"}</AppText></Pressable> : null}
+                  {localizedSelectedTask.id === "first-deposit-mock" ? <TextInput accessibilityLabel="模拟首次转入金额" keyboardType="decimal-pad" placeholder={locale === "en-US" ? "Mock first deposit amount" : "模拟首次转入金额"} value={String(selectedTaskValues.amount ?? "")} onChangeText={(value) => setTaskValue("amount", value)} style={styles.mockTaskInput} /> : null}
+                  {localizedSelectedTask.id === "auto-savings-mock" ? <><TextInput accessibilityLabel="每月模拟储蓄金额" keyboardType="decimal-pad" placeholder={locale === "en-US" ? "Monthly mock amount" : "每月模拟储蓄金额"} value={String(selectedTaskValues.amount ?? "")} onChangeText={(value) => setTaskValue("amount", value)} style={styles.mockTaskInput} /><TextInput accessibilityLabel="模拟执行日" keyboardType="number-pad" maxLength={2} placeholder={locale === "en-US" ? "Day (1-28)" : "每月执行日（1-28）"} value={String(selectedTaskValues.day ?? "")} onChangeText={(value) => setTaskValue("day", value)} style={styles.mockTaskInput} /></> : null}
+                  {localizedSelectedTask.submission ? <AppText color="success" variant="caption">{locale === "en-US" ? "This saved result is simulated and does not represent real KYC, account linking, transfers, deposits, or automatic debits." : localizedSelectedTask.submission.disclosure}</AppText> : null}
+                  <Button label={locale === "en-US" ? "Validate and Save Mock Result" : "验证并保存模拟结果"} loading={taskActionState.loading} onPress={() => void handleMockTaskSubmit()} />
+                </View>
+              ) : null}
               {localizedSelectedTask.id === demoIntroLesson.taskId && localizedSelectedTask.status === "in_progress" ? (
                 <View style={styles.lessonPanel}>
                   <View style={styles.lessonHeader}>
@@ -1120,7 +1152,7 @@ function MobileApp() {
                   <AppText color="danger" variant="caption">{taskActionState.error}</AppText>
                 </View>
               ) : null}
-              {localizedSelectedTask.id !== demoIntroLesson.taskId || localizedSelectedTask.status !== "in_progress" ? <Button
+              {(localizedSelectedTask.id !== demoIntroLesson.taskId || localizedSelectedTask.status !== "in_progress") && !(mockInputTaskIds.includes(localizedSelectedTask.id) && localizedSelectedTask.status === "in_progress") ? <Button
                 disabled={!getTaskAction(localizedSelectedTask) && localizedSelectedTask.status !== "claimed"}
                 label={localizedSelectedTask.status === "claimed"
                   ? t(locale, "task.action.allocate")
@@ -1818,6 +1850,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.light.successSoft,
     borderRadius: 8,
     padding: spacing.md
+  },
+  mockTaskForm: {
+    backgroundColor: colors.light.surface,
+    borderColor: colors.light.border,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  mockTaskInput: {
+    backgroundColor: colors.light.surfaceMuted,
+    borderColor: colors.light.borderStrong,
+    borderRadius: 10,
+    borderWidth: 1,
+    color: colors.light.textPrimary,
+    minHeight: touch.minTarget,
+    paddingHorizontal: spacing.md
   },
   lessonPanel: {
     gap: spacing.md

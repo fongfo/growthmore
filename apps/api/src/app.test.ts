@@ -992,9 +992,9 @@ describe("task system", () => {
     expect(response.status).toBe(200);
     expect(response.body.summary).toMatchObject({
       completionStreakDays: 4,
-      totalTaskCount: 6,
+      totalTaskCount: 7,
       statusCounts: {
-        available: 1,
+        available: 2,
         in_progress: 1,
         pending_verification: 1,
         completed: 1,
@@ -1074,13 +1074,60 @@ describe("task system", () => {
     expect(ledger.body.ledger.filter((entry: { sourceId: string }) => entry.sourceId === "daily-check-in")).toHaveLength(1);
   });
 
+  it("validates, persists, edits, and deduplicates a savings goal", async () => {
+    const app = createApp();
+    await request(app).post("/api/tasks/savings-goal/retry").expect(200);
+    const invalid = await request(app).post("/api/tasks/savings-goal/submit").send({ eventId: "goal-1", values: { name: "A", targetAmount: 50, savedAmount: 80 } });
+    const created = await request(app).post("/api/tasks/savings-goal/submit").send({ eventId: "goal-2", values: { name: "应急储备", targetAmount: 5000, savedAmount: 1200 } });
+    const repeated = await request(app).post("/api/tasks/savings-goal/submit").send({ eventId: "goal-2", values: { name: "忽略重复", targetAmount: 9000, savedAmount: 0 } });
+    const edited = await request(app).post("/api/tasks/savings-goal/submit").send({ eventId: "goal-3", values: { name: "应急储备", targetAmount: 6000, savedAmount: 1800 } });
+    const detail = await request(app).get("/api/tasks/savings-goal");
+
+    expect(invalid.status).toBe(400);
+    expect(invalid.body.messages).toHaveLength(3);
+    expect(created.body).toMatchObject({ autoVerified: true, idempotent: false, task: { status: "completed", submission: { eventId: "goal-2", outcome: "mock_verified" } } });
+    expect(repeated.body.idempotent).toBe(true);
+    expect(edited.body.task.status).toBe("completed");
+    expect(detail.body.task.submission.values).toMatchObject({ targetAmount: 6000, savedAmount: 1800 });
+  });
+
+  it("restores the saved savings goal after reopening the API database", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "growthmore-goal-"));
+    const databasePath = join(directory, "demo.sqlite");
+    try {
+      const app = createApp({ databasePath });
+      await request(app).post("/api/tasks/savings-goal/retry").expect(200);
+      await request(app).post("/api/tasks/savings-goal/submit").send({ eventId: "goal-persist", values: { name: "旅行基金", targetAmount: 8000, savedAmount: 2000 } }).expect(200);
+      app.locals.demoStore.close();
+      const restarted = createApp({ databasePath });
+      const detail = await request(restarted).get("/api/tasks/savings-goal");
+      expect(detail.body.task).toMatchObject({ status: "completed", submission: { eventId: "goal-persist", values: { name: "旅行基金", targetAmount: 8000, savedAmount: 2000 } } });
+      restarted.locals.demoStore.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("requires valid evidence before completing simulated bank events", async () => {
+    const app = createApp();
+    const invalidAutoSave = await request(app).post("/api/tasks/auto-savings-mock/submit").send({ eventId: "auto-1", values: { amount: 5, day: 31 } });
+    const autoSave = await request(app).post("/api/tasks/auto-savings-mock/submit").send({ eventId: "auto-2", values: { amount: 500, day: 15 } });
+    await request(app).post("/api/tasks/first-deposit-mock/start").expect(200);
+    const deposit = await request(app).post("/api/tasks/first-deposit-mock/submit").send({ eventId: "deposit-1", values: { amount: 1000 } });
+
+    expect(invalidAutoSave.status).toBe(400);
+    expect(autoSave.body.task).toMatchObject({ status: "completed", submission: { outcome: "mock_verified" } });
+    expect(deposit.body.task).toMatchObject({ status: "completed", submission: { values: { amount: 1000 } } });
+    expect(deposit.body.task.submission.disclosure).toContain("不代表真实");
+  });
+
   it("filters tasks without changing the full board summary", async () => {
     const response = await request(createApp()).get("/api/tasks?type=learning");
 
     expect(response.status).toBe(200);
     expect(response.body.tasks).toHaveLength(1);
     expect(response.body.tasks[0]).toMatchObject({ category: "learning" });
-    expect(response.body.summary.totalTaskCount).toBe(6);
+    expect(response.body.summary.totalTaskCount).toBe(7);
   });
 
   it("rejects invalid task transitions", async () => {

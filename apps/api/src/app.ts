@@ -300,6 +300,37 @@ function claimTaskReward(store: DemoStore, userId: string, taskId: string): Task
   return claimResult;
 }
 
+type MockTaskValues = Record<string, string | number | boolean>;
+
+function validateMockTaskSubmission(taskId: string, values: MockTaskValues): string[] {
+  const errors: string[] = [];
+  if (taskId === "savings-goal") {
+    const name = String(values.name ?? "").trim();
+    const targetAmount = Number(values.targetAmount);
+    const savedAmount = Number(values.savedAmount ?? 0);
+    if (name.length < 2 || name.length > 40) errors.push("目标名称需为 2 至 40 个字符。");
+    if (!Number.isFinite(targetAmount) || targetAmount < 100 || targetAmount > 10000000) errors.push("目标金额需在 100 至 10,000,000 元之间。");
+    if (!Number.isFinite(savedAmount) || savedAmount < 0 || savedAmount > targetAmount) errors.push("当前进度需在 0 和目标金额之间。");
+  } else if (taskId === "profile-kyc-mock") {
+    if (String(values.fullName ?? "").trim().length < 2) errors.push("请填写姓名。");
+    if (!/^\d{4}$/.test(String(values.identityLast4 ?? ""))) errors.push("请输入 4 位模拟证件尾号。");
+    if (values.confirmMock !== true) errors.push("请确认这是资料补全模拟流程。");
+  } else if (taskId === "bank-account-linked") {
+    if (values.confirmAccount !== true) errors.push("请确认绑定展示的模拟账户。");
+  } else if (taskId === "first-deposit-mock") {
+    const amount = Number(values.amount);
+    if (!Number.isFinite(amount) || amount < 100 || amount > 1000000) errors.push("模拟首次转入金额需在 100 至 1,000,000 元之间。");
+  } else if (taskId === "auto-savings-mock") {
+    const amount = Number(values.amount);
+    const day = Number(values.day);
+    if (!Number.isFinite(amount) || amount < 10 || amount > 100000) errors.push("每月模拟储蓄金额需在 10 至 100,000 元之间。");
+    if (!Number.isInteger(day) || day < 1 || day > 28) errors.push("请选择 1 至 28 日作为模拟执行日。");
+  }
+  return errors;
+}
+
+const mockInputTaskIds = new Set(["savings-goal", "profile-kyc-mock", "bank-account-linked", "first-deposit-mock", "auto-savings-mock"]);
+
 export function createApp(options: CreateAppOptions = {}) {
   const app = express();
   const store = options.store ?? new DemoStore(options.databasePath);
@@ -1092,6 +1123,26 @@ export function createApp(options: CreateAppOptions = {}) {
     const taskId = request.params.taskId;
     if (taskId === demoIntroLesson.taskId) {
       response.status(409).json({ error: "learning_required", message: "请阅读全部课程内容并通过知识测验后完成任务。" });
+      return;
+    }
+    if (mockInputTaskIds.has(taskId)) {
+      const values = request.body?.values && typeof request.body.values === "object" ? request.body.values as MockTaskValues : {};
+      const eventId = typeof request.body?.eventId === "string" ? request.body.eventId.trim().slice(0, 100) : "";
+      if (!eventId) { response.status(400).json({ error: "event_id_required", message: "缺少模拟事件编号，请重试。" }); return; }
+      const current = currentState(store, response).tasks.find((item) => item.id === taskId);
+      if (!current) { response.status(404).json({ error: "task_not_found" }); return; }
+      if (current.submission?.eventId === eventId) { response.json({ action: "submit", autoVerified: true, idempotent: true, task: current }); return; }
+      const errors = validateMockTaskSubmission(taskId, values);
+      if (errors.length > 0) { response.status(400).json({ error: "invalid_mock_event", messages: errors }); return; }
+      const canSaveExisting = ["pending_verification", "completed", "claimed"].includes(current.status);
+      if (current.status !== "in_progress" && !canSaveExisting) { response.status(409).json({ error: "invalid_task_transition", message: `Invalid task transition: ${current.status} -> submit` }); return; }
+      const now = new Date().toISOString();
+      const verifiedTask = current.status === "in_progress"
+        ? applyTaskAction(applyTaskAction(current, "submit", now), "approve", now)
+        : current.status === "pending_verification" ? applyTaskAction(current, "approve", now) : current;
+      const completed = { ...verifiedTask, updatedAt: now, submission: { eventId, submittedAt: now, values, outcome: "mock_verified" as const, disclosure: "模拟结果仅用于演示，不代表真实 KYC、绑卡、转账、存款或自动扣款。" } };
+      store.updateState(currentSession(response).user.id, (state) => ({ ...state, tasks: state.tasks.map((item) => item.id === taskId ? completed : item) }));
+      response.json({ action: "submit", autoVerified: true, idempotent: false, task: completed });
       return;
     }
     if (taskId !== "daily-check-in") {
