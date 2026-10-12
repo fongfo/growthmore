@@ -20,6 +20,11 @@ import {
   demoVirtualBalance,
   demoVirtualBalanceLedger,
   demoWithdrawalRequests,
+  createRewardJarSnapshot,
+  createSimulationAllocationDraft,
+  createSimulationCycleRun,
+  createVirtualBalanceSnapshot,
+  getAvailableTaskActions,
   type AuditLogEntry,
   type CampaignConfiguration,
   type ComplianceSummary,
@@ -101,8 +106,26 @@ function identityForPhone(phone: string) {
   };
 }
 
+function taskForUser(task: UserTask, userId: string, isShowcaseUser: boolean): UserTask {
+  const userTask = { ...clone(task), userId };
+  if (isShowcaseUser) return userTask;
+  return {
+    ...userTask,
+    status: "available",
+    availableActions: getAvailableTaskActions("available"),
+    rejectionReason: null,
+    startedAt: null,
+    submittedAt: null,
+    completedAt: null,
+    claimedAt: null,
+    submission: null,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function seedUser(phone: string): StoredUser {
   const identity = identityForPhone(phone);
+  const isShowcaseUser = phone === defaultDemoPhone;
   const session: MockUserSession = {
     user: {
       id: identity.userId,
@@ -126,21 +149,21 @@ function seedUser(phone: string): StoredUser {
   const withUserId = <T extends { userId: string }>(value: T): T => ({ ...clone(value), userId: identity.userId });
   const state: DemoUserState = {
     account,
-    tasks: demoUserTasks.map(withUserId),
-    virtualBalance: clone(demoVirtualBalance),
-    virtualBalanceLedger: demoVirtualBalanceLedger.map(withUserId),
-    allocationDraft: withUserId(demoSimulationAllocationDraft),
-    simulationRun: withUserId(demoSimulationCycleRun),
-    simulationRuns: [withUserId(demoSimulationCycleRun)],
+    tasks: demoUserTasks.map((task) => taskForUser(task, identity.userId, isShowcaseUser)),
+    virtualBalance: isShowcaseUser ? clone(demoVirtualBalance) : createVirtualBalanceSnapshot([]),
+    virtualBalanceLedger: isShowcaseUser ? demoVirtualBalanceLedger.map(withUserId) : [],
+    allocationDraft: isShowcaseUser ? withUserId(demoSimulationAllocationDraft) : withUserId(createSimulationAllocationDraft(0, [])),
+    simulationRun: isShowcaseUser ? withUserId(demoSimulationCycleRun) : withUserId(createSimulationCycleRun(createSimulationAllocationDraft(0, []))),
+    simulationRuns: isShowcaseUser ? [withUserId(demoSimulationCycleRun)] : [],
     rewardJar: {
-      ...withUserId(demoRewardJar),
-      ledger: demoRewardJar.ledger.map(withUserId)
+      ...withUserId(isShowcaseUser ? demoRewardJar : createRewardJarSnapshot([])),
+      ledger: isShowcaseUser ? demoRewardJar.ledger.map(withUserId) : []
     },
-    rewardLedger: demoRewardLedger.map(withUserId),
+    rewardLedger: isShowcaseUser ? demoRewardLedger.map(withUserId) : [],
     rewardBudget: clone(demoRewardCampaignBudget),
     campaign: clone(demoCampaignConfiguration),
     campaignVersions: [clone(demoCampaignConfiguration)],
-    withdrawals: demoWithdrawalRequests.map((item) => ({
+    withdrawals: (isShowcaseUser ? demoWithdrawalRequests : []).map((item) => ({
       ...withUserId(item),
       withdrawalAccount: {
         id: account.id,
@@ -151,15 +174,15 @@ function seedUser(phone: string): StoredUser {
         status: account.status
       }
     })),
-    disclosureAcceptances: demoDisclosureAcceptances.map(withUserId),
+    disclosureAcceptances: isShowcaseUser ? demoDisclosureAcceptances.map(withUserId) : [],
     complianceSummary: {
       ...clone(demoComplianceSummary),
-      acceptedDisclosures: demoComplianceSummary.acceptedDisclosures.map(withUserId),
-      latestAuditLogs: demoComplianceSummary.latestAuditLogs.map(
+      acceptedDisclosures: isShowcaseUser ? demoComplianceSummary.acceptedDisclosures.map(withUserId) : [],
+      latestAuditLogs: (isShowcaseUser ? demoComplianceSummary.latestAuditLogs : []).map(
         (item) => item.actorType === "user" ? { ...clone(item), actorId: identity.userId } : clone(item)
       )
     },
-    auditLogs: demoAuditLogs.map((item) => item.actorType === "user" ? { ...clone(item), actorId: identity.userId } : clone(item)),
+    auditLogs: (isShowcaseUser ? demoAuditLogs : []).map((item) => item.actorType === "user" ? { ...clone(item), actorId: identity.userId } : clone(item)),
     home: { ...clone(demoTodayHomeSummary), userId: identity.userId },
     homeIntroductionDismissed: false,
     learningProgress: [{ lessonId: demoIntroLesson.id, taskId: demoIntroLesson.taskId, readSectionIds: [], quizAttemptCount: 0, quizPassed: false, score: null, feedback: null, completedAt: null, updatedAt: new Date().toISOString() }]
@@ -242,7 +265,7 @@ export class DemoStore {
     const storedTaskIds = new Set(state.tasks.map((task) => task.id));
     state.tasks = [
       ...state.tasks.map((task) => ({ ...task, submission: task.submission ?? null })),
-      ...demoUserTasks.filter((task) => !storedTaskIds.has(task.id)).map((task) => ({ ...clone(task), userId }))
+      ...demoUserTasks.filter((task) => !storedTaskIds.has(task.id)).map((task) => taskForUser(task, userId, userId === demoMockSession.user.id))
     ];
     if (!Array.isArray(state.learningProgress)) {
       state.learningProgress = [{

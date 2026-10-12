@@ -205,7 +205,7 @@ function createFirstExperienceFunnel(state: DemoUserState): FirstExperienceFunne
   const allocation = state.allocationDraft.totalAllocatedAmount > 0 ? state.allocationDraft : null;
   const reflection = state.simulationRuns.find((item) => item.reviewStatus === "completed") ??
     (state.simulationRun.reviewStatus === "completed" ? state.simulationRun : null);
-  const reward = state.rewardLedger.find((item) => item.status !== "reversed");
+  const reward = state.rewardLedger.find((item) => ["available", "withdrawal_pending", "paid"].includes(item.status));
   const withdrawal = state.withdrawals.find((item) => Boolean(item.idempotencyKey));
   const facts = [
     { id: "task" as const, complete: Boolean(task), occurredAt: task?.claimedAt ?? null, evidenceId: task?.id ?? null },
