@@ -27,6 +27,7 @@ import {
   type ComplianceSummary,
   type CampaignConfiguration,
   type DisclosureRequiredFor,
+  type FirstExperienceFunnel,
   type DisclosureVersion,
   type TodayHomeSummary,
   type VirtualBalanceLedgerEntry,
@@ -196,6 +197,43 @@ function createTodayHome(state: DemoUserState): TodayHomeSummary {
       estimatedMinutes: focusTask.estimatedMinutes
     },
     primaryAction
+  };
+}
+
+function createFirstExperienceFunnel(state: DemoUserState): FirstExperienceFunnel {
+  const task = state.tasks.find((item) => item.status === "claimed");
+  const allocation = state.allocationDraft.totalAllocatedAmount > 0 ? state.allocationDraft : null;
+  const reflection = state.simulationRuns.find((item) => item.reviewStatus === "completed") ??
+    (state.simulationRun.reviewStatus === "completed" ? state.simulationRun : null);
+  const reward = state.rewardLedger.find((item) => item.status !== "reversed");
+  const withdrawal = state.withdrawals.find((item) => Boolean(item.idempotencyKey));
+  const facts = [
+    { id: "task" as const, complete: Boolean(task), occurredAt: task?.claimedAt ?? null, evidenceId: task?.id ?? null },
+    { id: "allocation" as const, complete: Boolean(allocation), occurredAt: null, evidenceId: allocation ? "current-allocation" : null },
+    { id: "reflection" as const, complete: Boolean(reflection), occurredAt: reflection?.reviewCompletedAt ?? null, evidenceId: reflection?.id ?? null },
+    { id: "reward" as const, complete: Boolean(reward), occurredAt: reward?.createdAt ?? null, evidenceId: reward?.id ?? null },
+    { id: "withdrawal" as const, complete: Boolean(withdrawal), occurredAt: withdrawal?.submittedAt ?? null, evidenceId: withdrawal?.id ?? null }
+  ];
+  let previousComplete = true;
+  const stages = facts.map((fact) => {
+    const complete = previousComplete && fact.complete;
+    previousComplete = complete;
+    return {
+      id: fact.id,
+      status: complete ? "complete" as const : "pending" as const,
+      occurredAt: complete ? fact.occurredAt : null,
+      evidenceId: complete ? fact.evidenceId : null
+    };
+  });
+  const completedStageCount = stages.filter((stage) => stage.status === "complete").length;
+  return {
+    userId: state.home.userId,
+    environment: "demo",
+    completedStageCount,
+    totalStageCount: stages.length,
+    completed: completedStageCount === stages.length,
+    nextStage: stages.find((stage) => stage.status === "pending")?.id ?? null,
+    stages
   };
 }
 
@@ -375,6 +413,10 @@ export function createApp(options: CreateAppOptions = {}) {
     response.json({
       session: currentSession(response)
     });
+  });
+
+  app.get("/api/app/first-experience-funnel", (_request, response) => {
+    response.json({ funnel: createFirstExperienceFunnel(currentState(store, response)) });
   });
 
   app.get("/api/bank-accounts/current", (_request, response) => {

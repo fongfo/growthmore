@@ -317,6 +317,25 @@ export type SimulationReflectionResult = {
   acceptedRiskConfirmation: boolean;
   messages: string[];
 };
+
+export type FirstExperienceStageId = "task" | "allocation" | "reflection" | "reward" | "withdrawal";
+
+export type FirstExperienceFunnelStage = {
+  id: FirstExperienceStageId;
+  status: "pending" | "complete";
+  occurredAt: string | null;
+  evidenceId: string | null;
+};
+
+export type FirstExperienceFunnel = {
+  userId: MockUserSession["user"]["id"];
+  environment: "demo";
+  completedStageCount: number;
+  totalStageCount: number;
+  completed: boolean;
+  nextStage: FirstExperienceStageId | null;
+  stages: FirstExperienceFunnelStage[];
+};
 export type RewardStatus = "pending" | "available" | "locked" | "withdrawal_pending" | "paid" | "failed" | "reversed";
 
 export type RewardLedgerSourceType = "task" | "learning_cycle" | "campaign_budget" | "manual_review" | "withdrawal";
