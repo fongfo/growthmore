@@ -495,6 +495,7 @@ export type AuditAction =
   | "disclosure.accepted"
   | "task.status_changed"
   | "reward.ledger_created"
+  | "reward.settled"
   | "withdrawal.submitted"
   | "withdrawal.reviewed"
   | "campaign.configured"

@@ -245,6 +245,11 @@ export class DemoStore {
     return this.login(defaultDemoPhone);
   }
 
+  listUsers(): Array<{ session: MockUserSession; state: DemoUserState }> {
+    const rows = this.database.prepare("SELECT user_id, session_json FROM demo_users").all() as Array<{ user_id: string; session_json: string }>;
+    return rows.map((row) => ({ session: JSON.parse(row.session_json) as MockUserSession, state: this.getState(row.user_id) }));
+  }
+
   getSession(accessToken?: string): MockUserSession | null {
     const token = accessToken || this.getDefaultSession().auth.accessToken;
     const row = this.database.prepare(`
