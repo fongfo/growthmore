@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import type { AuditLogEntry, CampaignConfiguration, WithdrawalRequest } from "@growthmore/shared";
-import { adminApi, type Admin } from "./api";
+import { adminApi, type Admin, type RewardReviewItem } from "./api";
 
-type Page = "overview" | "campaign" | "withdrawals" | "audit";
+type Page = "overview" | "campaign" | "rewards" | "withdrawals" | "audit";
 const money = (value: number) => new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY" }).format(value);
 const date = (value: string | null) => value ? new Date(value).toLocaleString("zh-CN") : "未发布";
 
@@ -14,6 +14,7 @@ export function App() {
   const [campaign, setCampaign] = useState<CampaignConfiguration | null>(null);
   const [versions, setVersions] = useState<CampaignConfiguration[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [rewards, setRewards] = useState<RewardReviewItem[]>([]);
   const [audits, setAudits] = useState<AuditLogEntry[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -26,7 +27,10 @@ export function App() {
     if (session.admin.roles.includes("operator")) {
       const data = await adminApi.campaign(activeToken); setCampaign(data.campaign); setVersions(data.versions);
     }
-    if (session.admin.roles.includes("reviewer")) setWithdrawals((await adminApi.withdrawals(activeToken)).withdrawals);
+    if (session.admin.roles.includes("reviewer")) {
+      setWithdrawals((await adminApi.withdrawals(activeToken)).withdrawals);
+      setRewards((await adminApi.rewards(activeToken)).rewards);
+    }
     if (session.admin.roles.includes("auditor")) setAudits((await adminApi.audits(activeToken)).auditLogs);
   }
 
@@ -46,13 +50,13 @@ export function App() {
 
   if (!admin) return <main className="login-shell"><form className="login-card" onSubmit={login}>
     <div className="brand-mark">G</div><p className="eyebrow">GROWTHMORE</p><h1>运营控制台</h1>
-    <p className="muted">配置活动预算、审核模拟提现，并保留每一次操作记录。</p>
+    <p className="muted">配置活动预算、结算活动奖励、审核模拟提现，并保留每一次操作记录。</p>
     <label>演示访问码<input value={draftToken} onChange={(event) => setDraftToken(event.target.value)} autoComplete="current-password" /></label>
     {error && <p className="error" role="alert">{error}</p>}<button className="primary">进入控制台</button>
     <p className="hint">完整权限演示码：admin-demo</p>
   </form></main>;
 
-  const nav: Array<[Page, string, string]> = [["overview", "总览", "⌂"], ["campaign", "活动与预算", "◎"], ["withdrawals", "提现审核", "⇄"], ["audit", "操作审计", "▤"]];
+  const nav: Array<[Page, string, string]> = [["overview", "总览", "⌂"], ["campaign", "活动与预算", "◎"], ["rewards", "奖励结算", "¥"], ["withdrawals", "提现审核", "⇄"], ["audit", "操作审计", "▤"]];
   return <div className="app-shell">
     <aside><div className="brand"><span className="brand-mark small">G</span><div><strong>Growthmore</strong><small>运营控制台</small></div></div>
       <nav>{nav.map(([id, label, icon]) => <button key={id} className={page === id ? "active" : ""} onClick={() => setPage(id)}><span>{icon}</span>{label}</button>)}</nav>
@@ -62,6 +66,7 @@ export function App() {
       {message && <div className="notice success">{message}</div>}{error && <div className="notice error">{error}</div>}
       {page === "overview" && campaign && <Overview campaign={campaign} withdrawals={withdrawals} audits={audits} />}
       {page === "campaign" && campaign && (admin.roles.includes("operator") ? <CampaignEditor campaign={campaign} versions={versions} onChange={setCampaign} onSave={() => act(() => adminApi.saveCampaign(token, campaign), "草稿已保存。")} onPublish={() => act(() => adminApi.publishCampaign(token), "活动已发布，用户端将读取新规则。")} /> : <NoAccess />)}
+      {page === "rewards" && (admin.roles.includes("reviewer") ? <RewardQueue items={rewards} onSettle={(id) => act(() => adminApi.settleReward(token, id), "奖励已完成模拟结算。")} /> : <NoAccess />)}
       {page === "withdrawals" && (admin.roles.includes("reviewer") ? <WithdrawalQueue items={withdrawals} onReview={(id, action, reason) => act(() => adminApi.review(token, id, action, reason), "审核结果已保存。")} /> : <NoAccess />)}
       {page === "audit" && (admin.roles.includes("auditor") ? <AuditTable items={audits} /> : <NoAccess />)}
     </main>
@@ -91,8 +96,17 @@ function CampaignEditor({ campaign, versions, onChange, onSave, onPublish }: { c
     <section className="panel"><h2>历史规则版本</h2><p className="muted">历史奖励流水继续保留当时适用的版本。</p><div className="timeline">{versions.slice().reverse().map((item) => <article key={item.ruleVersion}><span></span><div><strong>{item.ruleVersion}</strong><p>{item.name}</p><small>{date(item.publishedAt)} · {money(item.budget.totalBudgetAmount)}</small></div></article>)}</div></section></div>;
 }
 
-function WithdrawalQueue({ items, onReview }: { items: WithdrawalRequest[]; onReview: (id: string, action: "approve" | "reject", reason: string) => void }) {
-  return <section className="panel"><div className="section-head"><div><h2>模拟提现审核队列</h2><p>审核只改变模拟状态和冻结奖励，不连接真实银行通道。</p></div></div><div className="cards">{items.map((item) => <article className="withdrawal" key={item.id}><div><span className={"status " + item.status}>{item.status}</span><h3>{money(item.amount)}</h3><p>{item.withdrawalAccount.accountName} · {item.withdrawalAccount.accountNumberMasked}</p><small>{item.id} · {date(item.submittedAt)}</small></div>{["submitted", "under_review"].includes(item.status) && <div className="row-actions"><button onClick={() => onReview(item.id, "reject", "运营审核拒绝")}>拒绝</button><button className="primary" onClick={() => onReview(item.id, "approve", "")}>批准</button></div>}</article>)}</div></section>;
+function WithdrawalQueue({ items, onReview }: { items: WithdrawalRequest[]; onReview: (id: string, action: "approve" | "reject" | "settle", reason: string) => void }) {
+  return <section className="panel"><div className="section-head"><div><h2>模拟提现审核队列</h2><p>审核只改变模拟状态和冻结奖励，不连接真实银行通道。</p></div></div><div className="cards">{items.map((item) => <article className="withdrawal" key={item.id}><div><span className={"status " + item.status}>{item.status}</span><h3>{money(item.amount)}</h3><p>{item.withdrawalAccount.accountName} · {item.withdrawalAccount.accountNumberMasked}</p><small>{item.id} · {date(item.submittedAt)}</small></div>{["submitted", "under_review"].includes(item.status) && <div className="row-actions"><button onClick={() => onReview(item.id, "reject", "运营审核拒绝")}>拒绝</button><button className="primary" onClick={() => onReview(item.id, "approve", "")}>批准</button></div>}{item.status === "approved" && <div className="row-actions"><button className="primary" onClick={() => onReview(item.id, "settle", "")}>模拟结算</button></div>}</article>)}</div></section>;
+}
+
+function RewardQueue({ items, onSettle }: { items: RewardReviewItem[]; onSettle: (id: string) => void }) {
+  return <section className="panel"><div className="section-head"><div><h2>待结算活动奖励</h2><p>仅将通过学习复盘、资格和预算校验的奖励转为可领取；不会触发真实打款。</p></div></div>
+    {items.length === 0 ? <p className="muted">当前没有待结算奖励。</p> : <div className="cards">{items.map(({ userId, userName, phoneMasked, reward, settleable }) => <article className="withdrawal" key={reward.id}>
+      <div><span className="status pending">待结算</span><h3>{money(reward.amount)}</h3><p>{userName} · {phoneMasked}</p><small>{reward.id} · {date(reward.createdAt)} · {userId}</small></div>
+      <div className="row-actions">{settleable ? <button className="primary" onClick={() => onSettle(reward.id)}>确认模拟结算</button> : <span className="muted">当前规则或资格不满足，无法结算</span>}</div>
+    </article>)}</div>}
+  </section>;
 }
 
 function AuditTable({ items }: { items: AuditLogEntry[] }) { return <section className="panel"><h2>不可省略的操作记录</h2><p className="muted">记录操作者、动作、规则版本与发生时间，便于追溯。</p><div className="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>对象</th><th>说明</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td>{date(item.occurredAt)}</td><td>{item.actorId}</td><td><code>{item.action}</code></td><td>{item.entityId}</td><td>{item.summary}</td></tr>)}</tbody></table></div></section>; }

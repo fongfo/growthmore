@@ -80,6 +80,20 @@ function currentState(store: DemoStore, response: Response): DemoUserState {
   return store.getState(currentSession(response).user.id);
 }
 
+function canSettleReward(state: DemoUserState, entry: RewardLedgerEntry): boolean {
+  const run = state.simulationRuns.find((item) => item.id === entry.sourceId);
+  const awardedUnderPublishedRule = state.campaignVersions.some((campaign) =>
+    campaign.status === "published" &&
+    campaign.ruleVersion === entry.activityRuleVersion &&
+    campaign.budget.programId === entry.programId &&
+    campaign.budget.budgetBatchId === entry.budgetBatchId
+  );
+  return entry.status === "pending" && entry.sourceType === "learning_cycle" &&
+    Boolean(run && run.reviewStatus === "completed" && run.rewardEligible) &&
+    Number.isFinite(entry.amount) && entry.amount > 0 &&
+    awardedUnderPublishedRule;
+}
+
 function getPendingDisclosures(state: DemoUserState, contexts: DisclosureRequiredFor[]): DisclosureVersion[] {
   const acceptedVersions = new Set(state.disclosureAcceptances.map(
     (acceptance) => `${acceptance.disclosureId}:${acceptance.version}`
@@ -535,14 +549,15 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/admin/overview", (_request, response) => {
     const state = currentState(store, response);
+    const users = store.listUsers();
     response.json({
       campaign: state.campaign,
       budget: state.rewardBudget,
-      withdrawalCounts: state.withdrawals.reduce<Record<string, number>>((counts, item) => {
+      withdrawalCounts: users.flatMap(({ state: userState }) => userState.withdrawals).reduce<Record<string, number>>((counts, item) => {
         counts[item.status] = (counts[item.status] ?? 0) + 1;
         return counts;
       }, {}),
-      auditCount: state.auditLogs.length
+      auditCount: users.reduce((total, { state: userState }) => total + userState.auditLogs.length, 0)
     });
   });
 
@@ -661,12 +676,13 @@ export function createApp(options: CreateAppOptions = {}) {
 
   app.get("/api/admin/audit-logs", requireAdminRole("auditor"), (_request, response) => {
     response.json({
-      auditLogs: currentState(store, response).auditLogs
+      auditLogs: store.listUsers().flatMap(({ state }) => state.auditLogs)
+        .sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     });
   });
 
   app.get("/api/admin/withdrawals", requireAdminRole("reviewer"), (_request, response) => {
-    response.json({ withdrawals: currentState(store, response).withdrawals });
+    response.json({ withdrawals: store.listUsers().flatMap(({ state }) => state.withdrawals) });
   });
 
   app.get("/api/app/home", (_request, response) => {
@@ -969,6 +985,62 @@ export function createApp(options: CreateAppOptions = {}) {
       ledger: currentState(store, response).rewardLedger
     });
   });
+  app.get("/api/admin/rewards", requireAdminRole("reviewer"), (_request, response) => {
+    const rewards = store.listUsers().flatMap(({ session, state }) => state.rewardLedger
+      .filter((entry) => entry.status === "pending")
+      .map((entry) => ({
+        userId: session.user.id,
+        userName: session.user.displayName,
+        phoneMasked: session.user.phoneMasked,
+        reward: entry,
+        settleable: canSettleReward(state, entry)
+      })));
+    response.json({ rewards });
+  });
+  app.post("/api/admin/rewards/:rewardId/settle", requireAdminRole("reviewer"), (request, response) => {
+    const candidate = store.listUsers().find(({ state }) => state.rewardLedger.some((item) => item.id === request.params.rewardId));
+    if (!candidate) { response.status(404).json({ error: "reward_not_found" }); return; }
+    const userId = candidate.session.user.id;
+    let reward: RewardLedgerEntry | null = null;
+    let error: string | null = null;
+    store.updateState(userId, (state) => {
+      const entry = state.rewardLedger.find((item) => item.id === request.params.rewardId);
+      if (!entry) { error = "reward_not_found"; return state; }
+      if (entry.status === "available") { reward = entry; return state; }
+      if (!canSettleReward(state, entry)) {
+        error = "reward_not_settleable";
+        return state;
+      }
+      const now = new Date().toISOString();
+      reward = { ...entry, status: "available", lockReason: null, availableAt: now };
+      const rewardLedger = state.rewardLedger.map((item) => item.id === entry.id ? reward! : item);
+      const rewardJar = createRewardJarSnapshot(rewardLedger);
+      return {
+        ...state,
+        rewardLedger,
+        rewardJar: { ...rewardJar, userId },
+        auditLogs: [{
+          id: store.createId("audit"),
+          actorType: "admin",
+          actorId: (response.locals.admin as AdminIdentity).id,
+          action: "reward.settled",
+          entityType: "reward_ledger",
+          entityId: entry.id,
+          occurredAt: now,
+          ipAddressMasked: maskedIp(request),
+          userAgent: String(request.get("user-agent") ?? "growthmore-admin").slice(0, 120),
+          summary: "活动奖励完成模拟结算，现可按规则申请领取。",
+          metadata: { amount: entry.amount, programId: entry.programId, ruleVersion: entry.activityRuleVersion }
+        }, ...state.auditLogs],
+        home: { ...state.home, balances: { ...state.home.balances, rewardJarAmount: rewardJar.totalBalanceAmount } }
+      };
+    });
+    if (error) {
+      response.status(error === "reward_not_found" ? 404 : 409).json({ error });
+      return;
+    }
+    response.json({ reward });
+  });
   app.post("/api/rewards/withdraw", (request, response) => {
     if (!requireDisclosures(store, response, ["withdrawal"])) return;
     const amount = Number(request.body?.amount);
@@ -1072,7 +1144,9 @@ export function createApp(options: CreateAppOptions = {}) {
 
   for (const action of ["approve", "reject", "retry", "settle", "fail", "cancel"] as const) {
     app.post(`/api/admin/withdrawals/:withdrawalId/${action}`, requireAdminRole("reviewer"), (request, response) => {
-      const userId = currentSession(response).user.id;
+      const candidate = store.listUsers().find(({ state }) => state.withdrawals.some((item) => item.id === request.params.withdrawalId));
+      if (!candidate) { response.status(404).json({ error: "withdrawal_not_found" }); return; }
+      const userId = candidate.session.user.id;
       let updatedWithdrawal = null as ReturnType<typeof applyWithdrawalReviewAction>["request"];
       let transitionError: string | null = null;
       let found = false;

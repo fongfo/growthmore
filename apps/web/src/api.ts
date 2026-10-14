@@ -1,4 +1,6 @@
-import type { AuditLogEntry, CampaignConfiguration, WithdrawalRequest } from "@growthmore/shared";
+import type { AuditLogEntry, CampaignConfiguration, RewardLedgerEntry, WithdrawalRequest } from "@growthmore/shared";
+
+export type RewardReviewItem = { userId: string; userName: string; phoneMasked: string; reward: RewardLedgerEntry; settleable: boolean };
 
 export type Admin = { id: string; name: string; roles: Array<"operator" | "reviewer" | "auditor"> };
 const API_URL = import.meta.env.VITE_API_URL ?? "";
@@ -20,6 +22,8 @@ export const adminApi = {
   saveCampaign: (token: string, campaign: CampaignConfiguration) => call<{ campaign: CampaignConfiguration }>("/api/admin/campaign", token, { method: "PUT", body: JSON.stringify(campaign) }),
   publishCampaign: (token: string) => call<{ campaign: CampaignConfiguration }>("/api/admin/campaign/publish", token, { method: "POST" }),
   withdrawals: (token: string) => call<{ withdrawals: WithdrawalRequest[] }>("/api/admin/withdrawals", token),
-  review: (token: string, id: string, action: "approve" | "reject", reason: string) => call<{ withdrawal: WithdrawalRequest }>(`/api/admin/withdrawals/${id}/${action}`, token, { method: "POST", body: JSON.stringify({ reason }) }),
+  rewards: (token: string) => call<{ rewards: RewardReviewItem[] }>("/api/admin/rewards", token),
+  settleReward: (token: string, id: string) => call<{ reward: RewardLedgerEntry }>(`/api/admin/rewards/${id}/settle`, token, { method: "POST" }),
+  review: (token: string, id: string, action: "approve" | "reject" | "settle", reason: string) => call<{ withdrawal: WithdrawalRequest }>(`/api/admin/withdrawals/${id}/${action}`, token, { method: "POST", body: JSON.stringify({ reason }) }),
   audits: (token: string) => call<{ auditLogs: AuditLogEntry[] }>("/api/admin/audit-logs", token)
 };
