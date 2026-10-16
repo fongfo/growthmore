@@ -78,6 +78,31 @@ export type MobileAppData = {
 };
 
 export type Fetcher = typeof fetch;
+let activeAccessToken: string | null = null;
+
+export function setActiveAccessToken(token: string | null): void {
+  activeAccessToken = token;
+  clearMobileDataCache();
+}
+
+export function participantCodeToPhone(code: string): string | null {
+  const match = /^P?([0-9]{2})$/i.exec(code.trim());
+  const number = match ? Number(match[1]) : 0;
+  return number >= 1 && number <= 99 ? `139000000${match![1]}` : null;
+}
+
+export function loginDemoParticipant(code: string, apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
+  const phone = participantCodeToPhone(code);
+  if (!phone) throw new MobileApiError("请输入 P01 至 P99 的体验编号。", null, false);
+  return requestJson<{ session: MockUserSession }>(apiBaseUrl, "/api/auth/mock-login", {
+    method: "POST",
+    body: JSON.stringify({ phone })
+  }, fetcher, false);
+}
+
+export function validateActiveSession(apiBaseUrl = defaultApiBaseUrl, fetcher: Fetcher = fetch) {
+  return fetchJson<{ session: MockUserSession }>(apiBaseUrl, "/api/auth/session", fetcher);
+}
 export type MobileDataModule = "account" | "home" | "tasks" | "simulation" | "rewards" | "compliance";
 export type MobileDataLoadResult = {
   data: MobileAppData;
@@ -114,12 +139,12 @@ export class MobileApiError extends Error {
   }
 }
 
-async function requestJson<T>(baseUrl: string, path: string, options: RequestInit, fetcher: Fetcher): Promise<T> {
+async function requestJson<T>(baseUrl: string, path: string, options: RequestInit, fetcher: Fetcher, authenticated = true): Promise<T> {
   let response: Response;
   try {
     response = await fetcher(baseUrl.replace(/\/$/, "") + path, {
       ...options,
-      headers: { "Content-Type": "application/json", ...options.headers }
+      headers: { "Content-Type": "application/json", ...(authenticated && activeAccessToken ? { Authorization: `Bearer ${activeAccessToken}` } : {}), ...options.headers }
     });
   } catch {
     throw new MobileApiError("网络连接失败，操作未完成。请检查网络后重试。", null, true);

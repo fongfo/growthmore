@@ -24,6 +24,15 @@ export const localeOptions: Array<{ label: string; value: Locale }> = [
 
 const messages: Record<Locale, Messages> = {
   "zh-CN": {
+    "account.title": "开始独立体验",
+    "account.body": "输入主持人分配的 P01–P99 体验编号。每个编号对应独立的演示进度；再次输入同一编号可以继续。无需真实手机号，也不会产生真实转账。",
+    "account.code": "体验编号",
+    "account.placeholder": "例如 P01",
+    "account.continue": "开始体验",
+    "account.switch": "切换体验账户",
+    "account.error": "无法进入体验账户，请检查网络后重试。",
+    "account.restoring": "正在恢复体验账户…",
+    "account.greeting": "你好，{name}",
     "a11y.planProgress": "当前计划进度 {percent}%",
     "a11y.tabPage": "{label}页面",
     "action.completeReflection": "完成复盘与风险确认",
@@ -189,6 +198,15 @@ const messages: Record<Locale, Messages> = {
     "unit.virtualGrowth": "成长金"
   },
   "en-US": {
+    "account.title": "Start your own demo",
+    "account.body": "Enter the P01–P99 code assigned by the facilitator. Each code has separate progress; reuse the same code to continue. No real phone number or transfer is needed.",
+    "account.code": "Participant code",
+    "account.placeholder": "For example P01",
+    "account.continue": "Start demo",
+    "account.switch": "Switch demo account",
+    "account.error": "Could not open the demo account. Check your connection and try again.",
+    "account.restoring": "Restoring your demo account…",
+    "account.greeting": "Hi, {name}",
     "a11y.planProgress": "Current plan progress {percent}%",
     "a11y.tabPage": "{label} tab",
     "action.completeReflection": "Complete Review and Risk Check",

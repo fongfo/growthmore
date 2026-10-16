@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { demoTenant } from "@growthmore/shared";
-import { acceptDisclosure, defaultApiBaseUrl, emptyMobileAppData, fallbackMobileAppData, loadMobileAppData, markLessonSectionRead, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, submitLearningQuiz, submitSimulationReflection, submitWithdrawal, updateHomeIntroduction } from "./mobileAppData";
+import { acceptDisclosure, defaultApiBaseUrl, emptyMobileAppData, fallbackMobileAppData, loadMobileAppData, loginDemoParticipant, markLessonSectionRead, participantCodeToPhone, railwayApiBaseUrl, resolveApiBaseUrl, runSimulationCycle, runTaskAction, saveSimulationAllocations, setActiveAccessToken, submitLearningQuiz, submitSimulationReflection, submitWithdrawal, updateHomeIntroduction } from "./mobileAppData";
 
 function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -11,6 +11,37 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
 }
 
 describe("mobile API data loader", () => {
+  beforeEach(() => setActiveAccessToken(null));
+
+  it("maps distinct participant codes to separate demo accounts", () => {
+    expect(participantCodeToPhone("P01")).toBe("13900000001");
+    expect(participantCodeToPhone("P02")).toBe("13900000002");
+    expect(participantCodeToPhone("P00")).toBeNull();
+    expect(participantCodeToPhone("13800004288")).toBeNull();
+  });
+
+  it("logs in without a previous account token and scopes later requests to the selected account", async () => {
+    setActiveAccessToken("old-token");
+    const fetcher = vi.fn(async () => jsonResponse({ session: fallbackMobileAppData.session }));
+    await loginDemoParticipant("P01", defaultApiBaseUrl, fetcher);
+    expect(fetcher).toHaveBeenCalledWith(`${defaultApiBaseUrl}/api/auth/mock-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: "13900000001" })
+    });
+    setActiveAccessToken("new-token");
+    await runTaskAction("daily-check-in", "start", defaultApiBaseUrl, fetcher);
+    expect(fetcher).toHaveBeenLastCalledWith(`${defaultApiBaseUrl}/api/tasks/daily-check-in/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer new-token" }
+    });
+    setActiveAccessToken(null);
+    await runTaskAction("daily-check-in", "start", defaultApiBaseUrl, fetcher);
+    expect(fetcher).toHaveBeenLastCalledWith(`${defaultApiBaseUrl}/api/tasks/daily-check-in/start`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+  });
   it("defaults preview builds to the Railway API", () => {
     expect(defaultApiBaseUrl).toBe(railwayApiBaseUrl);
   });

@@ -169,7 +169,9 @@ export default function App() {
 }
 
 function MobileApp() {
-  const { data, errorMessage, isDemoMode, isFallback, moduleErrors, refresh, setDemoMode, status } = useMobileAppData();
+  const { accountStatus, data, errorMessage, isDemoMode, isFallback, moduleErrors, refresh, setDemoMode, signIn, signOut, status } = useMobileAppData();
+  const [participantCode, setParticipantCode] = useState("");
+  const [accountAction, setAccountAction] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null });
   const [activeTab, setActiveTab] = useState<TabId>("today");
   const [allocationDraft, setAllocationDraft] = useState(fallbackMobileAppData.allocationDraft);
   const [allocationInputs, setAllocationInputs] = useState<Record<string, string>>({});
@@ -272,6 +274,29 @@ function MobileApp() {
   const handleLocaleChange = (nextLocale: Locale) => {
     setLocale(nextLocale);
     void saveLocalePreference(nextLocale).catch(() => undefined);
+  };
+
+  const handleSignIn = async () => {
+    if (accountAction.loading) return;
+    setAccountAction({ loading: true, error: null });
+    try {
+      await signIn(participantCode);
+      setParticipantCode("");
+      setAccountAction({ loading: false, error: null });
+    } catch (error) {
+      setAccountAction({ loading: false, error: locale === "zh-CN" && error instanceof Error ? error.message : t(locale, "account.error") });
+    }
+  };
+
+  const handleSwitchAccount = async () => {
+    await signOut();
+    setHelpOpen(false);
+    setActiveTab("today");
+    setSelectedDisclosureIds([]);
+    setWithdrawalConfirmed(false);
+    withdrawalRequestKey.current = null;
+    setTaskDrafts({});
+    setTaskActionState({ error: null, loading: false, message: null });
   };
 
   const handleReviewIntroduction = () => {
@@ -518,6 +543,46 @@ function MobileApp() {
       setLearningLoading(false);
     }
   };
+  if (accountStatus !== "signedIn") {
+    return (
+      <View style={styles.appRoot}>
+        <StatusBar style="dark" />
+        <Screen>
+          <Card style={styles.accountPanel} tone="learning">
+            <AppText color="learning" variant="eyebrow">GROWTHMORE DEMO</AppText>
+            <AppText variant="heading">{t(locale, "account.title")}</AppText>
+            <AppText color="textSecondary" variant="body">{t(locale, "account.body")}</AppText>
+            {accountStatus === "restoring" ? (
+              <AppText color="textSecondary" variant="body">{t(locale, "account.restoring")}</AppText>
+            ) : (
+              <>
+                <AppText variant="bodyStrong">{t(locale, "account.code")}</AppText>
+                <TextInput
+                  accessibilityLabel={t(locale, "account.code")}
+                  autoCapitalize="characters"
+                  editable={!accountAction.loading}
+                  maxLength={3}
+                  onChangeText={(value) => { setParticipantCode(value.toUpperCase()); setAccountAction({ loading: false, error: null }); }}
+                  placeholder={t(locale, "account.placeholder")}
+                  style={styles.mockTaskInput}
+                  value={participantCode}
+                />
+                {accountAction.error ? <AppText color="danger" variant="caption">{accountAction.error}</AppText> : null}
+                <Button label={t(locale, "account.continue")} loading={accountAction.loading} onPress={() => void handleSignIn()} />
+              </>
+            )}
+            <View style={styles.languageSwitch}>
+              {localeOptions.map((option) => (
+                <Pressable accessibilityLabel={option.label} accessibilityRole="button" key={option.value} onPress={() => handleLocaleChange(option.value)} style={[styles.languageOption, locale === option.value ? styles.languageOptionActive : undefined]}>
+                  <AppText color={locale === option.value ? "inverseText" : "textSecondary"} variant="label">{option.label}</AppText>
+                </Pressable>
+              ))}
+            </View>
+          </Card>
+        </Screen>
+      </View>
+    );
+  }
   return (
     <View style={styles.appRoot}>
       <StatusBar style="dark" />
@@ -528,7 +593,7 @@ function MobileApp() {
             <AppText color="textSecondary" variant="label">
               {data.tenant.displayName}
             </AppText>
-            <AppText variant="heading">Hi, {data.session.user.displayName}</AppText>
+            <AppText variant="heading">{t(locale, "account.greeting", { name: data.session.user.displayName })}</AppText>
           </View>
           <View style={styles.topActions}>
             <Badge iconName={status === "loading" ? "cloud-sync-outline" : isFallback ? "database-eye-outline" : "cloud-check-outline"} label={status === "loading" ? t(locale, "api.status.loading") : isFallback ? t(locale, "api.status.demo") : t(locale, "api.status.connected")} tone={isFallback ? "learning" : "success"} />
@@ -580,6 +645,7 @@ function MobileApp() {
                 })}
               </View>
             </View>
+            <Button label={t(locale, "account.switch")} onPress={() => void handleSwitchAccount()} variant="secondary" />
           </Card>
         ) : null}
 
@@ -1473,6 +1539,10 @@ const styles = StyleSheet.create({
   apiStatusPanel: {
     alignItems: "flex-start",
     gap: spacing.md
+  },
+  accountPanel: {
+    gap: spacing.lg,
+    marginTop: spacing.xl
   },
   topBar: {
     alignItems: "flex-start",
